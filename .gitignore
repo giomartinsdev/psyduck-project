@@ -47,5 +47,6 @@ Thumbs.db
 .next
 out
 
-
-.env*
+# env files
+**/*.env*
+.env.local
