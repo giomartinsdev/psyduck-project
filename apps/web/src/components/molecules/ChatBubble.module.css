@@ -1,0 +1,38 @@
+.wrapper { display: flex; align-items: flex-end; gap: var(--space-2); margin-bottom: var(--space-4); animation: slideUp 0.3s both; }
+.wrapperUser { flex-direction: row-reverse; }
+.wrapperAI  { flex-direction: row; }
+.aiAvatar {
+  width: 28px; height: 28px; flex-shrink: 0;
+  border-radius: var(--radius-full);
+  background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; color: white;
+}
+.bubble {
+  max-width: 70%; padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg); position: relative;
+  display: flex; flex-direction: column; gap: var(--space-1);
+}
+.bubbleUser {
+  background: var(--color-primary);
+  color: white;
+  border-bottom-right-radius: var(--radius-sm);
+}
+.bubbleAI {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  border-bottom-left-radius: var(--radius-sm);
+}
+.content { font-size: var(--text-sm); line-height: var(--leading-relaxed); white-space: pre-wrap; }
+.time { font-size: 10px; opacity: 0.6; text-align: right; margin-top: 2px; }
+
+/* Typing dots */
+.typingIndicator { display: flex; gap: 4px; padding: var(--space-1) 0; align-items: center; }
+.typingIndicator span {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--color-text-secondary);
+  animation: typingDot 1.2s infinite;
+}
+.typingIndicator span:nth-child(2) { animation-delay: 0.2s; }
+.typingIndicator span:nth-child(3) { animation-delay: 0.4s; }

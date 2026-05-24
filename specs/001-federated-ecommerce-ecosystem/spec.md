@@ -2,7 +2,7 @@
 
 **Feature Branch**: `001-federated-ecommerce-ecosystem`  
 **Created**: 2026-05-24  
-**Status**: Draft  
+**Status**: In Progress  
 **Input**: User description: "Modular, AI-friendly e-commerce and content ecosystem based on DDD, unified through a federated GraphQL supergraph, exposing a headless WooCommerce/WordPress platform and an autonomous cognitive AI companion via Apollo MCP."
 
 ---
@@ -107,6 +107,7 @@ A logged-in shopper opens the AI chat panel on the storefront and asks the assis
 - **FR-012**: All domain events emitted by aggregates (e.g., `OrderPaid`, `InventoryDecremented`) MUST be dispatched over an internal event bus and consumed by other bounded contexts in a fully decoupled manner.
 - **FR-013**: Frontend components MUST declare their own GraphQL data dependencies as colocated fragments; parent components MUST compose child fragments without directly accessing the child's data fields.
 - **FR-014**: The system MUST generate strongly-typed query functions and fragment hooks from the GraphQL schema automatically, eliminating manual type maintenance.
+- **FR-015**: The frontend MUST operate fully in mock mode (`NEXT_PUBLIC_USE_MOCKS=true`) without any live backend services, enabling isolated UI development and demonstration.
 
 ### Key Entities
 
@@ -142,6 +143,7 @@ A logged-in shopper opens the AI chat panel on the storefront and asks the assis
 
 ## Assumptions
 
+- The frontend microservice is initially implemented with an in-memory mock layer; all GraphQL operations resolve against deterministic fixture data rather than live subgraph services.
 - The WooCommerce/WordPress instance will be pre-configured with products and posts available for the headless frontend to consume via its GraphQL plugin.
 - A standard UUID (v4) strategy is sufficient for idempotency key generation at the client side; collision risk is accepted as negligible for the expected transaction volume within the challenge scope.
 - The AI companion's LLM provider (inference endpoint) is available as a pre-provisioned external service; provisioning the model itself is out of scope.

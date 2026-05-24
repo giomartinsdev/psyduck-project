@@ -1,0 +1,294 @@
+"""
+Federated supergraph schema — tech-challenge
+Covers: Users, Products, Payments, Companion AI subgraphs
+Pagination: Relay Connections (cursor-based)
+"""
+
+# ─── Scalars ────────────────────────────────────────────────────────────────
+scalar DateTime
+scalar UUID
+scalar Decimal
+
+# ─── Relay Connection Helpers ────────────────────────────────────────────────
+type PageInfo {
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+  endCursor: String
+}
+
+# ─── Users Subgraph ─────────────────────────────────────────────────────────
+type User {
+  id: UUID!
+  email: String!
+  name: String!
+  avatarUrl: String
+  createdAt: DateTime!
+}
+
+type AuthPayload {
+  token: String!
+  user: User!
+}
+
+# ─── Products Subgraph (WooCommerce / WordPress) ────────────────────────────
+enum StockStatus {
+  IN_STOCK
+  OUT_OF_STOCK
+  ON_BACKORDER
+}
+
+type Product {
+  id: UUID!
+  slug: String!
+  title: String!
+  description: String!
+  price: Decimal!
+  compareAtPrice: Decimal
+  imageUrl: String!
+  galleryImages: [String!]!
+  stockStatus: StockStatus!
+  inventoryCount: Int!
+  category: String!
+  tags: [String!]!
+  createdAt: DateTime!
+}
+
+type ProductEdge {
+  cursor: String!
+  node: Product!
+}
+
+type ProductConnection {
+  edges: [ProductEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type Post {
+  id: UUID!
+  slug: String!
+  title: String!
+  excerpt: String!
+  content: String!
+  imageUrl: String!
+  category: String!
+  tags: [String!]!
+  publishedAt: DateTime!
+  author: String!
+}
+
+type PostEdge {
+  cursor: String!
+  node: Post!
+}
+
+type PostConnection {
+  edges: [PostEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+# ─── Cart (frontend-only, not persisted) ────────────────────────────────────
+type CartItem {
+  productId: UUID!
+  product: Product!
+  quantity: Int!
+  subtotal: Decimal!
+}
+
+# ─── Payments Subgraph (Go) ─────────────────────────────────────────────────
+enum OrderStatus {
+  PENDING
+  PROCESSING
+  PAID
+  FULFILLED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  INITIATED
+  AUTHORIZED
+  CAPTURED
+  FAILED
+  REFUNDED
+}
+
+type ShippingAddress {
+  street: String!
+  city: String!
+  state: String!
+  postalCode: String!
+  country: String!
+}
+
+type OrderItem {
+  id: UUID!
+  productId: UUID!
+  productTitle: String!
+  productImageUrl: String!
+  quantity: Int!
+  unitPrice: Decimal!
+  subtotal: Decimal!
+}
+
+type Payment {
+  id: UUID!
+  orderId: UUID!
+  status: PaymentStatus!
+  amount: Decimal!
+  currency: String!
+  idempotencyKey: String!
+  processedAt: DateTime
+}
+
+type Order {
+  id: UUID!
+  userId: UUID!
+  status: OrderStatus!
+  items: [OrderItem!]!
+  shippingAddress: ShippingAddress!
+  subtotal: Decimal!
+  total: Decimal!
+  payment: Payment
+  idempotencyKey: String!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+type OrderEdge {
+  cursor: String!
+  node: Order!
+}
+
+type OrderConnection {
+  edges: [OrderEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+# ─── Companion AI Subgraph (Python / LangChain / Apollo MCP) ────────────────
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+enum ToolStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+type ToolInvocation {
+  toolName: String!
+  arguments: String!
+  result: String
+  status: ToolStatus!
+}
+
+type AIMessage {
+  id: UUID!
+  role: MessageRole!
+  content: String!
+  toolInvocations: [ToolInvocation!]!
+  createdAt: DateTime!
+}
+
+type AIConversation {
+  id: UUID!
+  userId: UUID!
+  messages: [AIMessage!]!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+type AIMessageResponse {
+  message: AIMessage!
+  conversation: AIConversation!
+}
+
+# ─── Inputs ─────────────────────────────────────────────────────────────────
+input SignInInput {
+  email: String!
+  password: String!
+}
+
+input SignUpInput {
+  name: String!
+  email: String!
+  password: String!
+}
+
+input ShippingAddressInput {
+  street: String!
+  city: String!
+  state: String!
+  postalCode: String!
+  country: String!
+}
+
+input OrderItemInput {
+  productId: UUID!
+  quantity: Int!
+}
+
+input CreateOrderInput {
+  items: [OrderItemInput!]!
+  shippingAddress: ShippingAddressInput!
+  idempotencyKey: String!
+}
+
+input ProcessPaymentInput {
+  orderId: UUID!
+  idempotencyKey: String!
+}
+
+input SendAIMessageInput {
+  conversationId: UUID
+  content: String!
+}
+
+# ─── Queries ─────────────────────────────────────────────────────────────────
+type Query {
+  # Users
+  me: User
+
+  # Products
+  products(first: Int, after: String, category: String, search: String): ProductConnection!
+  product(id: UUID!): Product
+  featuredProducts(limit: Int): [Product!]!
+
+  # Posts
+  posts(first: Int, after: String, category: String): PostConnection!
+  post(id: UUID!): Post
+  featuredPosts(limit: Int): [Post!]!
+
+  # Orders
+  myOrders(first: Int, after: String): OrderConnection!
+  order(id: UUID!): Order
+
+  # AI
+  myConversations: [AIConversation!]!
+  conversation(id: UUID!): AIConversation
+}
+
+# ─── Mutations ───────────────────────────────────────────────────────────────
+type Mutation {
+  # Auth
+  signIn(input: SignInInput!): AuthPayload!
+  signUp(input: SignUpInput!): AuthPayload!
+  signOut: Boolean!
+
+  # Orders
+  createOrder(input: CreateOrderInput!): Order!
+
+  # Payments
+  processPayment(input: ProcessPaymentInput!): Payment!
+
+  # AI
+  sendAIMessage(input: SendAIMessageInput!): AIMessageResponse!
+  startConversation: AIConversation!
+}
