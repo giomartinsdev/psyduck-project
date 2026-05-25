@@ -1,17 +1,29 @@
-import { All, Controller, Req, Res } from '@nestjs/common';
+import { All, Controller, Inject, Req, Res } from '@nestjs/common';
 import { toNodeHandler } from 'better-auth/node';
-import { auth } from './better-auth';
+import { BETTER_AUTH_TOKEN, type AuthInstance } from './better-auth.factory';
 import type { Request, Response } from 'express';
 
-// Mounts every BetterAuth route (sign-in, sign-up, sessions, OAuth2 authorize,
-// token endpoint, OIDC discovery, etc.) under /api/auth/*.
+// Mounts every BetterAuth route under /api/auth/*:
+//   POST /api/auth/sign-in/email
+//   POST /api/auth/sign-up/email
+//   POST /api/auth/sign-out
+//   GET  /api/auth/get-session
+//   GET  /api/auth/oauth2/authorize        ← OAuth2 authorization endpoint
+//   POST /api/auth/oauth2/token            ← token exchange (for AI delegation)
+//   GET  /.well-known/openid-configuration ← OIDC discovery
 @Controller('api/auth')
 export class AuthController {
-  private readonly handler = toNodeHandler(auth);
+  private readonly handler: ReturnType<typeof toNodeHandler>;
+
+  constructor(@Inject(BETTER_AUTH_TOKEN) auth: AuthInstance) {
+    this.handler = toNodeHandler(auth);
+  }
 
   @All('*')
   async handle(@Req() req: Request, @Res() res: Response) {
-    // BetterAuth's toNodeHandler takes Node IncomingMessage/ServerResponse
-    await this.handler(req as unknown as Parameters<typeof this.handler>[0], res as unknown as Parameters<typeof this.handler>[1]);
+    await this.handler(
+      req as unknown as Parameters<typeof this.handler>[0],
+      res as unknown as Parameters<typeof this.handler>[1],
+    );
   }
 }

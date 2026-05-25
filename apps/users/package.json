@@ -11,21 +11,21 @@
   },
   "dependencies": {
     "@apollo/subgraph": "^2.7.5",
+    "@better-auth/kysely-adapter": "^1.6.11",
     "@mikro-orm/core": "^6.3.0",
+    "@mikro-orm/knex": "^6.6.14",
+    "@mikro-orm/migrations": "^6.3.0",
     "@mikro-orm/nestjs": "^6.0.2",
     "@mikro-orm/postgresql": "^6.3.0",
-    "@mikro-orm/migrations": "^6.3.0",
     "@nestjs/apollo": "^12.2.0",
     "@nestjs/common": "^10.3.0",
     "@nestjs/core": "^10.3.0",
     "@nestjs/cqrs": "^10.2.7",
     "@nestjs/graphql": "^12.2.0",
     "@nestjs/platform-express": "^10.3.0",
-    "@better-auth/kysely-adapter": "^1.6.11",
     "better-auth": "^1.6.11",
     "graphql": "^16.8.1",
     "kysely": "^0.28.5",
-    "uuid": "^9.0.1",
     "pg": "^8.11.5",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
@@ -42,6 +42,8 @@
     "typescript": "^5.3.3"
   },
   "mikro-orm": {
-    "configPaths": ["./src/infrastructure/persistence/mikro-orm.config.ts"]
+    "configPaths": [
+      "./src/infrastructure/persistence/mikro-orm.config.ts"
+    ]
   }
 }

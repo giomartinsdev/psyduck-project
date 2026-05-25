@@ -1,7 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject } from '@nestjs/common';
 import { fromNodeHeaders } from 'better-auth/node';
 import { IncomingHttpHeaders } from 'node:http';
-import { auth } from './better-auth';
+import { BETTER_AUTH_TOKEN, type AuthInstance } from './better-auth.factory';
 
 export interface SessionUser {
   id: string;
@@ -23,9 +23,11 @@ export interface BetterAuthSession {
 
 @Injectable()
 export class AuthService {
+  constructor(@Inject(BETTER_AUTH_TOKEN) private readonly auth: AuthInstance) {}
+
   async getSession(nodeHeaders: IncomingHttpHeaders): Promise<BetterAuthSession | null> {
     const headers = fromNodeHeaders(nodeHeaders);
-    const session = await auth.api.getSession({ headers });
+    const session = await this.auth.api.getSession({ headers });
     if (!session?.user) return null;
     return session as unknown as BetterAuthSession;
   }
@@ -34,17 +36,10 @@ export class AuthService {
     name: string;
     email: string;
     password: string;
-    headers?: Headers;
   }): Promise<{ token: string; user: SessionUser }> {
-    const response = await auth.api.signUpEmail({
-      body: {
-        name: params.name,
-        email: params.email,
-        password: params.password,
-      },
-      headers: params.headers,
+    const response = await this.auth.api.signUpEmail({
+      body: { name: params.name, email: params.email, password: params.password },
     });
-
     return {
       token: response.token ?? '',
       user: {
@@ -60,16 +55,10 @@ export class AuthService {
   async signIn(params: {
     email: string;
     password: string;
-    headers?: Headers;
   }): Promise<{ token: string; user: SessionUser }> {
-    const response = await auth.api.signInEmail({
-      body: {
-        email: params.email,
-        password: params.password,
-      },
-      headers: params.headers,
+    const response = await this.auth.api.signInEmail({
+      body: { email: params.email, password: params.password },
     });
-
     return {
       token: response.token ?? '',
       user: {
@@ -83,6 +72,6 @@ export class AuthService {
   }
 
   async signOut(nodeHeaders: IncomingHttpHeaders): Promise<void> {
-    await auth.api.signOut({ headers: fromNodeHeaders(nodeHeaders) });
+    await this.auth.api.signOut({ headers: fromNodeHeaders(nodeHeaders) });
   }
 }
