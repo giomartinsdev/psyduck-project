@@ -1,5 +1,4 @@
 import type { FactoryProvider } from '@nestjs/common';
-import { getEntityManagerToken } from '@mikro-orm/nestjs';
 import { AbstractSqlConnection } from '@mikro-orm/knex';
 import { EntityManager } from '@mikro-orm/postgresql';
 import { kyselyAdapter } from '@better-auth/kysely-adapter';
@@ -48,7 +47,7 @@ export const AuthDatabaseKyselyFactory = {
       plugins: [new CamelCasePlugin()],
     });
   },
-  inject: [getEntityManagerToken('pg')],
+  inject: [EntityManager],
 } satisfies FactoryProvider;
 
 export type AuthKysely = Kysely<Record<string, unknown>>;
