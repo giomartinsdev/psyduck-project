@@ -1,48 +1,44 @@
 import { CommandHandler, ICommandHandler, EventBus } from '@nestjs/cqrs';
-import { Inject, UnauthorizedException } from '@nestjs/common';
+import { UnauthorizedException } from '@nestjs/common';
 import { SignInCommand } from './sign-in.command';
-import { IUserRepository, USER_REPOSITORY } from '../../../domain/user/user.repository';
-import { JwtService } from '../../../infrastructure/auth/jwt.service';
-import { PasswordService } from '../../../infrastructure/auth/password.service';
+import { AuthService } from '../../../infrastructure/auth/auth.service';
+import { UserSignedInEvent } from '../../../domain/user/user.events';
 import type { AuthResult } from '../sign-up/sign-up.handler';
 
 @CommandHandler(SignInCommand)
 export class SignInHandler implements ICommandHandler<SignInCommand, AuthResult> {
   constructor(
-    @Inject(USER_REPOSITORY) private readonly userRepo: IUserRepository,
-    private readonly jwtService: JwtService,
-    private readonly passwordService: PasswordService,
+    private readonly authService: AuthService,
     private readonly eventBus: EventBus,
   ) {}
 
   async execute(command: SignInCommand): Promise<AuthResult> {
-    const user = await this.userRepo.findByEmail(command.email);
-    if (!user) throw new UnauthorizedException('Invalid credentials');
+    try {
+      const result = await this.authService.signIn({
+        email: command.email,
+        password: command.password,
+      });
 
-    const valid = await this.passwordService.compare(command.password, user.hashedPassword);
-    if (!valid) throw new UnauthorizedException('Invalid credentials');
+      this.eventBus.publish(
+        new UserSignedInEvent(result.user.id, result.user.email, new Date()),
+      );
 
-    user.recordSignIn();
-    const events = user.pullDomainEvents();
-    for (const event of events) {
-      this.eventBus.publish(event);
+      return {
+        token: result.token,
+        user: {
+          id: result.user.id,
+          email: result.user.email,
+          name: result.user.name,
+          avatarUrl: result.user.image ?? null,
+          createdAt: result.user.createdAt,
+        },
+      };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes('INVALID_EMAIL_OR_PASSWORD') || message.includes('Invalid')) {
+        throw new UnauthorizedException('Invalid credentials');
+      }
+      throw err;
     }
-
-    const token = this.jwtService.sign({
-      sub: user.id,
-      email: user.email,
-      name: user.name,
-    });
-
-    return {
-      token,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        avatarUrl: user.avatarUrl,
-        createdAt: user.createdAt,
-      },
-    };
   }
 }

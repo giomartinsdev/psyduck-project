@@ -1,3 +1,5 @@
+import { IncomingHttpHeaders } from 'node:http';
+
 export class GetMeQuery {
-  constructor(public readonly userId: string) {}
+  constructor(public readonly headers: IncomingHttpHeaders) {}
 }

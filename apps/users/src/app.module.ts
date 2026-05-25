@@ -5,26 +5,23 @@ import { MikroOrmModule } from '@mikro-orm/nestjs';
 import { join } from 'path';
 import mikroOrmConfig from './infrastructure/persistence/mikro-orm.config';
 import { UsersModule } from './users.module';
-import { JwtService } from './infrastructure/auth/jwt.service';
-import { buildContext } from './infrastructure/auth/auth.context';
+import { AuthController } from './infrastructure/auth/auth.controller';
+import type { Request } from 'express';
 
 @Module({
   imports: [
     MikroOrmModule.forRoot(mikroOrmConfig),
-    GraphQLModule.forRootAsync<ApolloFederationDriverConfig>({
+
+    GraphQLModule.forRoot<ApolloFederationDriverConfig>({
       driver: ApolloFederationDriver,
-      useFactory: (jwtService: JwtService) => ({
-        typePaths: [join(__dirname, '**/*.graphql')],
-        federationVersion: 2,
-        context: ({ req }: { req: { headers: Record<string, string> } }) => {
-          const auth = req.headers['authorization'] ?? '';
-          return buildContext(auth, jwtService);
-        },
-      }),
-      inject: [JwtService],
-      imports: [UsersModule],
+      typePaths: [join(__dirname, '**/*.graphql')],
+      // BetterAuth-aware context: forward the raw Express request so
+      // session verification (cookie or Bearer token) works in resolvers.
+      context: ({ req }: { req: Request }) => ({ req }),
     }),
+
     UsersModule,
   ],
+  controllers: [AuthController],
 })
 export class AppModule {}

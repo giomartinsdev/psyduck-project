@@ -1,7 +1,7 @@
 import { IQueryHandler, QueryHandler } from '@nestjs/cqrs';
-import { Inject } from '@nestjs/common';
 import { GetMeQuery } from './get-me.query';
-import { IUserRepository, USER_REPOSITORY } from '../../../domain/user/user.repository';
+import { AuthService } from '../../../infrastructure/auth/auth.service';
+import { IncomingHttpHeaders } from 'node:http';
 
 export interface UserView {
   id: string;
@@ -11,19 +11,21 @@ export interface UserView {
   createdAt: Date;
 }
 
+// GetMeQuery now carries the raw request headers so BetterAuth can
+// verify the session token (cookie or Bearer) directly.
 @QueryHandler(GetMeQuery)
 export class GetMeHandler implements IQueryHandler<GetMeQuery, UserView | null> {
-  constructor(@Inject(USER_REPOSITORY) private readonly userRepo: IUserRepository) {}
+  constructor(private readonly authService: AuthService) {}
 
   async execute(query: GetMeQuery): Promise<UserView | null> {
-    const user = await this.userRepo.findById(query.userId);
-    if (!user) return null;
+    const session = await this.authService.getSession(query.headers as IncomingHttpHeaders);
+    if (!session) return null;
     return {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      avatarUrl: user.avatarUrl,
-      createdAt: user.createdAt,
+      id: session.user.id,
+      email: session.user.email,
+      name: session.user.name,
+      avatarUrl: session.user.image ?? null,
+      createdAt: session.user.createdAt,
     };
   }
 }
