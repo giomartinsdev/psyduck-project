@@ -1,5 +1,5 @@
 {
-  "name": "@tech-challenge/gateway",
+  "name": "@tech-challenge/payments",
   "version": "1.0.0",
   "private": true,
   "scripts": {
@@ -8,14 +8,14 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "@apollo/gateway": "^2.7.5",
+    "@apollo/subgraph": "^2.7.5",
     "@apollo/server": "^4.10.4",
     "graphql": "^16.8.1",
-    "node-fetch": "^2.7.0"
+    "uuid": "^9.0.1"
   },
   "devDependencies": {
+    "@types/uuid": "^9.0.8",
     "@types/node": "^20.11.0",
-    "@types/node-fetch": "^2.6.11",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
   }

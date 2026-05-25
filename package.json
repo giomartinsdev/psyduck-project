@@ -39,5 +39,12 @@
   },
   "workspaces": [
     "apps/*"
-  ]
+  ],
+  "scripts": {
+    "dev:gateway": "npm run dev --workspace=apps/gateway",
+    "dev:users": "npm run dev --workspace=apps/users",
+    "dev:products": "npm run dev --workspace=apps/products",
+    "dev:payments": "npm run dev --workspace=apps/payments",
+    "dev:companion": "npm run dev --workspace=apps/companion"
+  }
 }

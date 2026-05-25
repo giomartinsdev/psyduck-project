@@ -1,0 +1,40 @@
+extend schema
+  @link(url: "https://specs.apollo.dev/federation/v2.0", import: ["@key", "@shareable"])
+
+scalar DateTime
+scalar UUID
+
+type User @key(fields: "id") {
+  id: UUID!
+  email: String!
+  name: String!
+  avatarUrl: String
+  createdAt: DateTime!
+}
+
+type AuthPayload {
+  token: String!
+  user: User!
+}
+
+input SignInInput {
+  email: String!
+  password: String!
+}
+
+input SignUpInput {
+  name: String!
+  email: String!
+  password: String!
+}
+
+type Query {
+  me: User
+  _sdl: String!
+}
+
+type Mutation {
+  signIn(input: SignInInput!): AuthPayload!
+  signUp(input: SignUpInput!): AuthPayload!
+  signOut: Boolean!
+}

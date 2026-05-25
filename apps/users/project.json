@@ -1,0 +1,23 @@
+{
+  "name": "users",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "sourceRoot": "apps/users/src",
+  "tags": ["subgraph", "users"],
+  "targets": {
+    "dev": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node ../../node_modules/.bin/ts-node -r tsconfig-paths/register src/main.ts",
+        "cwd": "apps/users"
+      }
+    },
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "npx tsc -p tsconfig.json",
+        "cwd": "apps/users"
+      }
+    }
+  }
+}
