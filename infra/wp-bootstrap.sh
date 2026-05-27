@@ -30,7 +30,7 @@ if ! wp core is-installed --allow-root; then
     echo "=== Installing WordPress Core ==="
     wp core install \
         --url="http://localhost:8080" \
-        --title="TechChallenge E-commerce" \
+        --title="Psyduck Project E-commerce" \
         --admin_user="admin" \
         --admin_password="admin_password" \
         --admin_email="admin@example.com" \

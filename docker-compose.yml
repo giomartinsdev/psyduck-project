@@ -3,7 +3,7 @@ version: '3.8'
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: tech-challenge-postgres
+    container_name: psyduck-project-postgres
     restart: always
     environment:
       POSTGRES_DB: users_db
@@ -16,7 +16,7 @@ services:
 
   db:
     image: mysql:8.0
-    container_name: tech-challenge-db
+    container_name: psyduck-project-db
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: wordpress_root_pwd
@@ -32,7 +32,7 @@ services:
     depends_on:
       - db
     image: wordpress:latest
-    container_name: tech-challenge-wordpress
+    container_name: psyduck-project-wordpress
     restart: always
     ports:
       - "8080:80"
