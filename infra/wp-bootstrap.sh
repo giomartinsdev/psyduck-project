@@ -9,7 +9,7 @@ done
 echo "=== WordPress Core Extracted ==="
 
 echo "=== Waiting for Database Connection ==="
-until bash -c 'cat < /dev/null > /dev/tcp/db/3306' 2>/dev/null; do
+until bash -c 'cat < /dev/null > /dev/tcp/mysql/3306' 2>/dev/null; do
     echo "Database port 3306 not open yet, sleeping 3s..."
     sleep 3
 done

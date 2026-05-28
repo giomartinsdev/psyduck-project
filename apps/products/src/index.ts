@@ -233,7 +233,7 @@ function mapProduct(node: Record<string, unknown>) {
     title: (node['name'] as string) || '',
     description: (node['description'] as string) || (node['shortDescription'] as string) || '',
     price: clean((node['price'] as string | undefined)),
-    compareAtPrice: node['regularPrice'] ? clean(node['regularPrice'] as string) : null,
+    compareAtPrice: (() => { const r = node['regularPrice'] ? clean(node['regularPrice'] as string) : null; const p = clean(node['price'] as string | undefined); return r && r !== p ? r : null; })(),
     imageUrl:
       ((node['image'] as Record<string, string> | undefined)?.['sourceUrl']) ||
       'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=600&q=80',
@@ -365,13 +365,29 @@ const resolvers = {
   },
 
   Product: {
-    __resolveReference(ref: { id: string }) {
+    async __resolveReference(ref: { id: string }) {
+      if (ref.id.startsWith('p1000001-0000-0000-0000-')) {
+        const wpId = productUuidToWpId(ref.id);
+        const result = await fetchWP(
+          `query($id:ID!){product(id:$id,idType:ID){id slug name description shortDescription image{sourceUrl}galleryImages{nodes{sourceUrl}}...on SimpleProduct{price regularPrice stockStatus stockQuantity}productCategories{nodes{name}}productTags{nodes{name}}date}}`,
+          { id: wpId },
+        );
+        if (result?.data?.['product']) return mapProduct(result.data['product'] as Record<string, unknown>);
+      }
       return MOCK_PRODUCTS.find((p) => p.id === ref.id) ?? null;
     },
   },
 
   Post: {
-    __resolveReference(ref: { id: string }) {
+    async __resolveReference(ref: { id: string }) {
+      if (ref.id.startsWith('b2000001-0000-0000-0000-')) {
+        const wpId = postUuidToWpId(ref.id);
+        const result = await fetchWP(
+          `query($id:ID!){post(id:$id,idType:ID){id slug title excerpt content featuredImage{node{sourceUrl}}categories{nodes{name}}tags{nodes{name}}date author{node{name}}}}`,
+          { id: wpId },
+        );
+        if (result?.data?.['post']) return mapPost(result.data['post'] as Record<string, unknown>);
+      }
       return MOCK_POSTS.find((p) => p.id === ref.id) ?? null;
     },
   },

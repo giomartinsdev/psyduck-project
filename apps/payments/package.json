@@ -11,9 +11,11 @@
     "@apollo/subgraph": "^2.7.5",
     "@apollo/server": "^4.10.4",
     "graphql": "^16.8.1",
+    "pg": "^8.11.5",
     "uuid": "^9.0.1"
   },
   "devDependencies": {
+    "@types/pg": "^8.11.5",
     "@types/uuid": "^9.0.8",
     "@types/node": "^20.11.0",
     "ts-node": "^10.9.2",

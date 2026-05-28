@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './global.css';
 import { Providers } from '../lib/providers';
 import { NavBar } from '../components/layout/NavBar';
@@ -12,7 +12,11 @@ export const metadata: Metadata = {
   description: 'Discover premium tech gear: headphones, keyboards, monitors, and more. Powered by a federated GraphQL ecosystem with AI-assisted shopping.',
   keywords: ['tech', 'electronics', 'e-commerce', 'headphones', 'keyboards'],
   authors: [{ name: 'TechStore Team' }],
-  viewport: 'width=device-width, initial-scale=1',
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
   themeColor: '#050914',
 };
 
