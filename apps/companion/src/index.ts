@@ -2,12 +2,36 @@ import 'reflect-metadata';
 import { ApolloServer } from '@apollo/server';
 import { startStandaloneServer } from '@apollo/server/standalone';
 import { buildSubgraphSchema } from '@apollo/subgraph';
+import { GraphQLError } from 'graphql';
 import { gql } from 'graphql-tag';
 import { MikroORM } from '@mikro-orm/core';
 import { defineConfig } from '@mikro-orm/postgresql';
 import { v4 as uuidv4 } from 'uuid';
 import { ConversationEntity } from './conversation.entity';
 import { MessageEntity } from './message.entity';
+
+const USERS_AUTH_URL = process.env['USERS_AUTH_URL'] ?? 'http://localhost:4001';
+
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+type Context = { userId: string | null };
+
+async function resolveUserId(authorization: string): Promise<string | null> {
+  if (!authorization.startsWith('Bearer ')) return null;
+  try {
+    const res = await fetch(`${USERS_AUTH_URL}/api/auth/get-session`, {
+      headers: { authorization },
+    });
+    const data = await res.json() as { user?: { id: string } };
+    return data?.user?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function requireAuth(ctx: Context): string {
+  if (!ctx.userId) throw new GraphQLError('Unauthorized', { extensions: { code: 'UNAUTHORIZED' } });
+  return ctx.userId;
+}
 
 // ─── MikroORM ─────────────────────────────────────────────────────────────────
 let orm: MikroORM;
@@ -114,9 +138,10 @@ const typeDefs = gql`
 // ─── Resolvers ────────────────────────────────────────────────────────────────
 const resolvers = {
   Query: {
-    async myConversations() {
+    async myConversations(_: unknown, __: unknown, ctx: Context) {
+      const userId = requireAuth(ctx);
       const em = orm.em.fork();
-      const conversations = await em.find(ConversationEntity, {}, {
+      const conversations = await em.find(ConversationEntity, { userId }, {
         populate: ['messages'],
         orderBy: { updatedAt: 'DESC' },
       });
@@ -131,21 +156,23 @@ const resolvers = {
   },
 
   Mutation: {
-    async startConversation() {
+    async startConversation(_: unknown, __: unknown, ctx: Context) {
+      const userId = requireAuth(ctx);
       const em = orm.em.fork();
-      const conv = em.create(ConversationEntity, { userId: 'unknown', createdAt: new Date(), updatedAt: new Date() });
+      const conv = em.create(ConversationEntity, { userId, createdAt: new Date(), updatedAt: new Date() });
       await em.persistAndFlush(conv);
       return toConversation(conv);
     },
 
-    async sendAIMessage(_: unknown, { input }: { input: { conversationId?: string; content: string } }) {
+    async sendAIMessage(_: unknown, { input }: { input: { conversationId?: string; content: string } }, ctx: Context) {
+      const userId = requireAuth(ctx);
       const em = orm.em.fork();
 
       let conv: ConversationEntity;
       if (input.conversationId) {
         conv = await em.findOneOrFail(ConversationEntity, { id: input.conversationId }, { populate: ['messages'] });
       } else {
-        conv = em.create(ConversationEntity, { userId: 'unknown', createdAt: new Date(), updatedAt: new Date() });
+        conv = em.create(ConversationEntity, { userId, createdAt: new Date(), updatedAt: new Date() });
         await em.persistAndFlush(conv);
         await em.populate(conv, ['messages']);
       }
@@ -197,11 +224,16 @@ const resolvers = {
 };
 
 // ─── Bootstrap ────────────────────────────────────────────────────────────────
-const server = new ApolloServer({ schema: buildSubgraphSchema({ typeDefs, resolvers }) });
+const server = new ApolloServer<Context>({ schema: buildSubgraphSchema({ typeDefs, resolvers }) });
 
 async function main() {
   await initOrm();
-  const { url } = await startStandaloneServer(server, { listen: { port: Number(process.env['PORT'] ?? 4004) } });
+  const { url } = await startStandaloneServer(server, {
+    context: async ({ req }) => ({
+      userId: await resolveUserId(req.headers['authorization'] ?? ''),
+    }),
+    listen: { port: Number(process.env['PORT'] ?? 4004) },
+  });
   console.log(`🤖 Companion AI subgraph running at: ${url}`);
 }
 

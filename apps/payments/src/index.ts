@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { ApolloServer } from '@apollo/server';
 import { startStandaloneServer } from '@apollo/server/standalone';
 import { buildSubgraphSchema } from '@apollo/subgraph';
+import { GraphQLError } from 'graphql';
 import { gql } from 'graphql-tag';
 import { MikroORM } from '@mikro-orm/core';
 import { defineConfig } from '@mikro-orm/postgresql';
@@ -10,6 +11,28 @@ import { OrderEntity, type OrderItemJson, type ShippingAddressJson } from './ord
 import { PaymentEntity } from './payment.entity';
 
 const PRODUCTS_URL = process.env['PRODUCTS_SUBGRAPH_URL'] ?? 'http://localhost:4002/graphql';
+const USERS_AUTH_URL = process.env['USERS_AUTH_URL'] ?? 'http://localhost:4001';
+
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+type Context = { userId: string | null };
+
+async function resolveUserId(authorization: string): Promise<string | null> {
+  if (!authorization.startsWith('Bearer ')) return null;
+  try {
+    const res = await fetch(`${USERS_AUTH_URL}/api/auth/get-session`, {
+      headers: { authorization },
+    });
+    const data = await res.json() as { user?: { id: string } };
+    return data?.user?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function requireAuth(ctx: Context): string {
+  if (!ctx.userId) throw new GraphQLError('Unauthorized', { extensions: { code: 'UNAUTHORIZED' } });
+  return ctx.userId;
+}
 
 async function fetchProduct(productId: string): Promise<{ title: string; price: string; imageUrl: string } | null> {
   try {
@@ -198,12 +221,13 @@ const typeDefs = gql`
 // ─── Resolvers ────────────────────────────────────────────────────────────────
 const resolvers = {
   Query: {
-    async myOrders(_: unknown, { first, after }: { first?: number; after?: string }) {
+    async myOrders(_: unknown, { first, after }: { first?: number; after?: string }, ctx: Context) {
+      const userId = requireAuth(ctx);
       const em = orm.em.fork();
       const start = after ? decodeCursor(after) + 1 : 0;
       const f = first ?? 10;
       const [orders, total] = await em.findAndCount(
-        OrderEntity, {},
+        OrderEntity, { userId },
         { orderBy: { createdAt: 'DESC' }, limit: f, offset: start },
       );
       const edges = orders.map((o, i) => ({ cursor: encodeCursor(start + i), node: toOrder(o) }));
@@ -227,7 +251,8 @@ const resolvers = {
   },
 
   Mutation: {
-    async createOrder(_: unknown, { input }: { input: { items: { productId: string; quantity: number }[]; shippingAddress: ShippingAddressJson; idempotencyKey: string } }) {
+    async createOrder(_: unknown, { input }: { input: { items: { productId: string; quantity: number }[]; shippingAddress: ShippingAddressJson; idempotencyKey: string } }, ctx: Context) {
+      const userId = requireAuth(ctx);
       const em = orm.em.fork();
 
       const existing = await em.findOne(OrderEntity, { idempotencyKey: input.idempotencyKey });
@@ -250,7 +275,7 @@ const resolvers = {
       const subtotal = items.reduce((s, it) => s + parseFloat(it.subtotal), 0).toFixed(2);
 
       const order = em.create(OrderEntity, {
-        userId: 'unknown',
+        userId,
         status: 'PENDING',
         items,
         shippingAddress: input.shippingAddress,
@@ -265,13 +290,17 @@ const resolvers = {
       return toOrder(order);
     },
 
-    async processPayment(_: unknown, { input }: { input: { orderId: string; idempotencyKey: string } }) {
+    async processPayment(_: unknown, { input }: { input: { orderId: string; idempotencyKey: string } }, ctx: Context) {
+      const userId = requireAuth(ctx);
       const em = orm.em.fork();
 
       const existing = await em.findOne(PaymentEntity, { idempotencyKey: input.idempotencyKey });
       if (existing) return toPayment(existing);
 
       const order = await em.findOneOrFail(OrderEntity, { id: input.orderId });
+      if (order.userId !== userId) {
+        throw new GraphQLError('Forbidden', { extensions: { code: 'FORBIDDEN' } });
+      }
 
       const payment = em.create(PaymentEntity, {
         order,
@@ -305,11 +334,16 @@ const resolvers = {
 };
 
 // ─── Bootstrap ────────────────────────────────────────────────────────────────
-const server = new ApolloServer({ schema: buildSubgraphSchema({ typeDefs, resolvers }) });
+const server = new ApolloServer<Context>({ schema: buildSubgraphSchema({ typeDefs, resolvers }) });
 
 async function main() {
   await initOrm();
-  const { url } = await startStandaloneServer(server, { listen: { port: Number(process.env['PORT'] ?? 4003) } });
+  const { url } = await startStandaloneServer(server, {
+    context: async ({ req }) => ({
+      userId: await resolveUserId(req.headers['authorization'] ?? ''),
+    }),
+    listen: { port: Number(process.env['PORT'] ?? 4003) },
+  });
   console.log(`💳 Payments subgraph running at: ${url}`);
 }
 

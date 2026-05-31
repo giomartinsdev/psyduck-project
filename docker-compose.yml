@@ -139,6 +139,7 @@ services:
       DB_USER: users_user
       DB_PASSWORD: users_pwd
       PRODUCTS_SUBGRAPH_URL: http://products:4002/graphql
+      USERS_AUTH_URL: http://users:4001
     healthcheck:
       test: ["CMD-SHELL", "node -e \"require('http').get({hostname:'localhost',port:4003,path:'/graphql'},(r)=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))\""]
       interval: 10s
@@ -163,6 +164,7 @@ services:
       DB_NAME: companion_db
       DB_USER: users_user
       DB_PASSWORD: users_pwd
+      USERS_AUTH_URL: http://users:4001
     healthcheck:
       test: ["CMD-SHELL", "node -e \"require('http').get({hostname:'localhost',port:4004,path:'/graphql'},(r)=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))\""]
       interval: 10s
