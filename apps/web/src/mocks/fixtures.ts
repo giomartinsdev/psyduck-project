@@ -5,8 +5,8 @@
 
 export const MOCK_USER = {
   id: '11111111-1111-1111-1111-111111111111',
-  email: 'gio@techallenge.dev',
-  name: 'Giovanni Palest',
+  email: 'default@default.com',
+  name: 'Default User',
   avatarUrl: null,
   createdAt: '2026-01-15T10:00:00Z',
 };

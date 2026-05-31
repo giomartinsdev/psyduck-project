@@ -13,8 +13,8 @@ function SignInForm() {
   const searchParams = useSearchParams();
   const redirect = searchParams.get('redirect') ?? '/';
 
-  const [email, setEmail] = useState('gio@techallenge.dev');
-  const [password, setPassword] = useState('password123');
+  const [email, setEmail] = useState('default@default.com');
+  const [password, setPassword] = useState('default');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
