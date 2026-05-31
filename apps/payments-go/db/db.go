@@ -52,9 +52,10 @@ func (d *DB) migrate() error {
 			shipping_address JSONB         NOT NULL DEFAULT '{}',
 			subtotal         NUMERIC(10,2) NOT NULL DEFAULT 0,
 			total            NUMERIC(10,2) NOT NULL DEFAULT 0,
-			idempotency_key  TEXT          UNIQUE NOT NULL,
+			idempotency_key  TEXT          NOT NULL,
 			created_at       TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
-			updated_at       TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+			updated_at       TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+			UNIQUE(user_id, idempotency_key)
 		);
 		CREATE TABLE IF NOT EXISTS payments (
 			id               UUID          PRIMARY KEY,
@@ -62,8 +63,9 @@ func (d *DB) migrate() error {
 			status           TEXT          NOT NULL DEFAULT 'INITIATED',
 			amount           NUMERIC(10,2) NOT NULL DEFAULT 0,
 			currency         TEXT          NOT NULL DEFAULT 'BRL',
-			idempotency_key  TEXT          UNIQUE NOT NULL,
-			processed_at     TIMESTAMPTZ
+			idempotency_key  TEXT          NOT NULL,
+			processed_at     TIMESTAMPTZ,
+			UNIQUE(order_id, idempotency_key)
 		);
 	`)
 	return err

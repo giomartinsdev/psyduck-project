@@ -15,9 +15,31 @@ const USERS_AUTH_URL = process.env['USERS_AUTH_URL'] ?? 'http://localhost:4001';
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 type Context = { userId: string | null };
 
+// Resolves the user ID from the incoming Authorization header.
+//
+// FR-010 flow: the gateway exchanges the user's session token for an OAuth2
+// access token scoped to ai-companion (via Authorization Code + PKCE against
+// BetterAuth's OIDC provider). This companion subgraph validates that token
+// by calling /oauth2/userinfo, which returns the authenticated user's sub.
+//
+// Fallback: if the token is an older-style session token (direct calls,
+// not via gateway), /get-session is tried as a secondary path.
 async function resolveUserId(authorization: string): Promise<string | null> {
   if (!authorization.startsWith('Bearer ')) return null;
   try {
+    // Primary: validate as OAuth2 access token via OIDC userinfo endpoint.
+    // The gateway issues these after the authorization_code + PKCE exchange.
+    const uiRes = await fetch(`${USERS_AUTH_URL}/api/auth/oauth2/userinfo`, {
+      headers: { authorization },
+    });
+    if (uiRes.ok) {
+      const ui = await uiRes.json() as { sub?: string };
+      if (ui.sub) return ui.sub;
+    }
+  } catch { /* fall through to session fallback */ }
+
+  try {
+    // Fallback: validate as a raw BetterAuth session token (bearer plugin).
     const res = await fetch(`${USERS_AUTH_URL}/api/auth/get-session`, {
       headers: { authorization },
     });

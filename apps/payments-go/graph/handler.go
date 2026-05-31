@@ -305,6 +305,7 @@ func (h *Handler) handleCreateOrder(ctx context.Context, vars map[string]interfa
 		return gqlResponse{Errors: []gqlError{errUnauthorized()}}
 	}
 	inputMap := getMap(vars, "input")
+	// Idempotency key is scoped per-user in both the DB constraint and the lookup
 	cmd := application.CreateOrderCommand{
 		UserID:         userID,
 		IdempotencyKey: getString(inputMap, "idempotencyKey"),

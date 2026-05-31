@@ -215,6 +215,10 @@ services:
       PRODUCTS_SUBGRAPH_URL: http://products:4002/graphql
       PAYMENTS_SUBGRAPH_URL: http://payments:4003/graphql
       AI_SUBGRAPH_URL: http://companion:4004/graphql
+      USERS_AUTH_URL: http://users:4001
+      AI_OAUTH_CLIENT_ID: ai-companion
+      AI_OAUTH_CLIENT_SECRET: companion-dev-secret
+      AI_OAUTH_REDIRECT_URL: http://localhost:4004/auth/callback
 
   # ─── Web ─────────────────────────────────────────────────────────────────────
 

@@ -3,6 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { MikroORM } from '@mikro-orm/core';
 import { getMigrations } from 'better-auth/db/migration';
+import { sql } from 'kysely';
 import { BETTER_AUTH_TOKEN, type AuthInstance } from './infrastructure/auth/better-auth.factory';
 import type { AuthKysely } from './infrastructure/auth/auth-database.factory';
 
@@ -35,6 +36,28 @@ async function bootstrap() {
     const code = (err as Record<string, unknown>)['code'];
     if (code !== '42701') throw err;
     console.log('[BetterAuth] Schema already up-to-date, skipping duplicate columns.');
+  }
+
+  // 3. Ensure the ai-companion OAuth2 application exists in the DB.
+  //    BetterAuth trustedClients config handles the authorize step, but the
+  //    token exchange endpoint requires the client row in oauth_application.
+  const aiClientId = process.env['AI_OAUTH_CLIENT_ID'] ?? 'ai-companion';
+  const aiClientSecret = process.env['AI_OAUTH_CLIENT_SECRET'] ?? 'companion-dev-secret';
+  const aiRedirectUrl = process.env['AI_OAUTH_REDIRECT_URL'] ?? 'http://localhost:4004/auth/callback';
+  try {
+    await sql`
+      INSERT INTO oauth_application
+        (id, name, client_id, client_secret, redirect_urls, type, disabled, created_at, updated_at)
+      VALUES
+        ('ai-companion-app', 'Companion AI',
+         ${aiClientId}, ${aiClientSecret},
+         ${JSON.stringify([aiRedirectUrl])},
+         'web', false, NOW(), NOW())
+      ON CONFLICT (client_id) DO NOTHING
+    `.execute(kysely);
+    console.log('[BetterAuth] OAuth2 ai-companion client ensured.');
+  } catch (err) {
+    console.warn('[BetterAuth] ai-companion registration skipped:', (err as Error).message);
   }
 
   const port = Number(process.env['PORT'] ?? 4001);

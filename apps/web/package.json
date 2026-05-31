@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "next build",
-    "start": "next start -p 3000"
+    "start": "next start -p 3000",
+    "codegen": "../../node_modules/.bin/graphql-codegen",
+    "codegen:watch": "../../node_modules/.bin/graphql-codegen --watch"
   },
   "dependencies": {
     "@apollo/client": "^3.14.1",

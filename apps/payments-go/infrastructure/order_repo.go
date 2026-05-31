@@ -66,8 +66,8 @@ func (r *PostgresOrderRepository) FindByID(ctx context.Context, id string) (*dom
 	return scanOrder(row)
 }
 
-func (r *PostgresOrderRepository) FindByIdempotencyKey(ctx context.Context, key string) (*domain.Order, error) {
-	row := r.Pool.QueryRow(ctx, orderSelectSQL+" WHERE idempotency_key = $1", key)
+func (r *PostgresOrderRepository) FindByIdempotencyKey(ctx context.Context, userID, key string) (*domain.Order, error) {
+	row := r.Pool.QueryRow(ctx, orderSelectSQL+" WHERE user_id = $1 AND idempotency_key = $2", userID, key)
 	return scanOrder(row)
 }
 

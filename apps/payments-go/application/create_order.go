@@ -53,8 +53,8 @@ type CreateOrderHandler struct {
 }
 
 func (h *CreateOrderHandler) Handle(ctx context.Context, cmd CreateOrderCommand) (*domain.Order, error) {
-	// Idempotency: return existing order if key already used
-	if existing, err := h.Orders.FindByIdempotencyKey(ctx, cmd.IdempotencyKey); err == nil && existing != nil {
+	// Idempotency scoped per user — two users can reuse the same UUID independently
+	if existing, err := h.Orders.FindByIdempotencyKey(ctx, cmd.UserID, cmd.IdempotencyKey); err == nil && existing != nil {
 		return existing, nil
 	}
 
