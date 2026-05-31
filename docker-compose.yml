@@ -212,9 +212,10 @@ services:
       - gateway
     environment:
       NEXT_PUBLIC_USE_MOCKS: "false"
-      # Uses localhost because this URL is accessed by the browser, not by the
-      # container itself — the host port mapping makes 4000 reachable.
+      # Browser-facing URL — the host port mapping makes 4000 reachable from outside.
       NEXT_PUBLIC_GATEWAY_URL: http://localhost:4000/graphql
+      # Server-facing URL — used by Next.js SSR/ISR inside the container.
+      GATEWAY_URL: http://gateway:4000/graphql
 
 volumes:
   postgres_data:

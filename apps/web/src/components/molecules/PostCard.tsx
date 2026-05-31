@@ -1,7 +1,21 @@
 import React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { gql } from '@apollo/client';
 import styles from './PostCard.module.css';
+
+export const PostCardFragment = gql`
+  fragment PostCard on Post {
+    id
+    slug
+    title
+    excerpt
+    imageUrl
+    category
+    publishedAt
+    author
+  }
+`;
 
 export interface PostCardData {
   id: string;

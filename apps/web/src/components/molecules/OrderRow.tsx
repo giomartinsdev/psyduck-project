@@ -1,5 +1,19 @@
 import React from 'react';
+import { gql } from '@apollo/client';
 import { orderStatusBadge } from '../atoms/Badge';
+
+export const OrderRowFragment = gql`
+  fragment OrderRow on Order {
+    id
+    status
+    total
+    createdAt
+    items {
+      productTitle
+      quantity
+    }
+  }
+`;
 
 export interface OrderRowData {
   id: string;

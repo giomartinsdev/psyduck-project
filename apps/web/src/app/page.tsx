@@ -3,20 +3,22 @@
 import React from 'react';
 import Link from 'next/link';
 import { useQuery, gql } from '@apollo/client';
-import { ProductCard } from '../components/molecules/ProductCard';
-import { PostCard } from '../components/molecules/PostCard';
+import { ProductCard, ProductCardFragment } from '../components/molecules/ProductCard';
+import { PostCard, PostCardFragment } from '../components/molecules/PostCard';
 import { Button } from '../components/atoms/Button';
 import { PageSpinner } from '../components/atoms/Spinner';
 
 const HOME_QUERY = gql`
   query HomePageData {
     featuredProducts(limit: 3) {
-      id slug title price compareAtPrice imageUrl stockStatus inventoryCount category
+      ...ProductCard
     }
     featuredPosts(limit: 2) {
-      id slug title excerpt imageUrl category publishedAt author
+      ...PostCard
     }
   }
+  ${ProductCardFragment}
+  ${PostCardFragment}
 `;
 
 export default function HomePage() {

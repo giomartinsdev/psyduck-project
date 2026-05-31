@@ -5,7 +5,7 @@ import { useQuery, gql } from '@apollo/client';
 import { useAuth } from '../../context/AuthContext';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
-import { OrderRow } from '../../components/molecules/OrderRow';
+import { OrderRow, OrderRowFragment } from '../../components/molecules/OrderRow';
 import { PageSpinner } from '../../components/atoms/Spinner';
 import Link from 'next/link';
 import { Button } from '../../components/atoms/Button';
@@ -14,10 +14,11 @@ const MY_ORDERS = gql`
   query MyOrders {
     myOrders(first: 20) {
       edges {
-        node { id status total createdAt items { productTitle quantity } }
+        node { ...OrderRow }
       }
     }
   }
+  ${OrderRowFragment}
 `;
 
 export default function OrdersPage() {

@@ -3,10 +3,25 @@
 import React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { gql } from '@apollo/client';
 import { stockBadge } from '../atoms/Badge';
 import { Button } from '../atoms/Button';
 import { useCart } from '../../context/CartContext';
 import styles from './ProductCard.module.css';
+
+export const ProductCardFragment = gql`
+  fragment ProductCard on Product {
+    id
+    slug
+    title
+    price
+    compareAtPrice
+    imageUrl
+    stockStatus
+    inventoryCount
+    category
+  }
+`;
 
 export interface ProductCardData {
   id: string;

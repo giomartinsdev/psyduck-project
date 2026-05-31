@@ -1,16 +1,28 @@
 'use client';
 
 import { ApolloClient, InMemoryCache, HttpLink, from } from '@apollo/client';
+import { setContext } from '@apollo/client/link/context';
 import { MockLink } from '../mocks/handlers';
 
 const USE_MOCKS = process.env.NEXT_PUBLIC_USE_MOCKS === 'true';
 
 let apolloClient: ApolloClient<unknown> | null = null;
 
+const authLink = setContext((_, { headers }: { headers: Record<string, string> }) => {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('mock_token') : null;
+  return {
+    headers: {
+      ...headers,
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    },
+  };
+});
+
 function createApolloClient() {
   const link = USE_MOCKS
     ? new MockLink()
     : from([
+        authLink,
         new HttpLink({
           uri: process.env.NEXT_PUBLIC_GATEWAY_URL ?? 'http://localhost:4000/graphql',
         }),
