@@ -13,6 +13,7 @@
   "devDependencies": {
     "@graphql-codegen/cli": "^7.0.0",
     "@graphql-codegen/client-preset": "^6.0.0",
+    "@playwright/test": "^1.60.0",
     "@types/uuid": "^10.0.0"
   }
 }

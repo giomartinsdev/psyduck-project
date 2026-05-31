@@ -7,6 +7,13 @@ async function bootstrap() {
     logger: ['log', 'error', 'warn'],
   });
 
+  app.enableCors({
+    origin: true,          // reflect request origin (permissive for dev)
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
+  });
+
   const port = Number(process.env['PORT'] ?? 4000);
   await app.listen(port);
 
