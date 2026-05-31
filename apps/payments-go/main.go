@@ -8,11 +8,14 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
+
+	"github.com/redis/go-redis/v9"
 
 	"github.com/psyduck-project/payments-go/application"
 	"github.com/psyduck-project/payments-go/db"
-	"github.com/psyduck-project/payments-go/domain"
 	"github.com/psyduck-project/payments-go/graph"
 	"github.com/psyduck-project/payments-go/infrastructure"
 )
@@ -87,48 +90,71 @@ func resolveUserID(ctx context.Context, authorization string) string {
 // ─── Bootstrap ────────────────────────────────────────────────────────────────
 
 func main() {
-	// Infrastructure
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	// ── Infrastructure ────────────────────────────────────────────────────────
 	database, err := db.New()
 	if err != nil {
 		log.Fatalf("DB init failed: %v", err)
 	}
 	defer database.Close()
 
+	valkeyClient := redis.NewClient(&redis.Options{
+		Addr: env("VALKEY_ADDR", "localhost:6379"),
+	})
+	if err := valkeyClient.Ping(ctx).Err(); err != nil {
+		log.Fatalf("Valkey connection failed: %v", err)
+	}
+	defer valkeyClient.Close()
+
+	// ── Repositories ──────────────────────────────────────────────────────────
 	orderRepo := &infrastructure.PostgresOrderRepository{Pool: database.Pool}
 	paymentRepo := &infrastructure.PostgresPaymentRepository{Pool: database.Pool}
 
-	// Domain event bus
-	bus := &domain.LoggingEventBus{}
+	// ── Event + command bus (both implemented by ValkeyEventBus) ─────────────
+	bus := infrastructure.NewValkeyEventBus(valkeyClient)
 
-	// Product fetcher
-	productsURL := env("PRODUCTS_SUBGRAPH_URL", "http://localhost:4002/graphql")
-	fetcher := &httpProductFetcher{url: productsURL}
+	// ── Domain event consumer (OrderCreated, OrderPaid reactions) ─────────────
+	domainConsumer := infrastructure.NewEventConsumer(valkeyClient)
+	domainConsumer.Start(ctx)
 
-	// Application handlers (command handlers — all business logic lives here)
+	// ── Payment command consumer (capture async: INITIATED → CAPTURED) ────────
+	cmdConsumer := infrastructure.NewPaymentCommandConsumer(valkeyClient, paymentRepo, orderRepo, bus)
+	cmdConsumer.Start(ctx)
+
+	// ── Application handlers ──────────────────────────────────────────────────
 	createOrderHandler := &application.CreateOrderHandler{
 		Orders:   orderRepo,
-		Products: fetcher,
+		Products: &httpProductFetcher{url: env("PRODUCTS_SUBGRAPH_URL", "http://localhost:4002/graphql")},
 		Bus:      bus,
 	}
 	processPaymentHandler := &application.ProcessPaymentHandler{
-		Orders:   orderRepo,
-		Payments: paymentRepo,
-		Bus:      bus,
+		Orders:     orderRepo,
+		Payments:   paymentRepo,
+		Bus:        bus,
+		CommandBus: bus, // ValkeyEventBus also implements PaymentCommandBus
 	}
 
-	// GraphQL HTTP adapter (thin — no business logic)
+	// ── GraphQL HTTP adapter ──────────────────────────────────────────────────
 	gqlHandler := graph.NewHandler(createOrderHandler, processPaymentHandler, orderRepo, paymentRepo)
 
 	mux := http.NewServeMux()
 	mux.Handle("/graphql", authMiddleware(gqlHandler))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
-		_, _ = w.Write([]byte("Payments Go subgraph (DDD) — POST /graphql"))
+		_, _ = w.Write([]byte("Payments Go (DDD + Valkey async) — POST /graphql"))
 	})
 
-	port := env("PORT", "4003")
-	fmt.Printf("💳 Payments Go subgraph (DDD) running at http://localhost:%s/graphql\n", port)
-	log.Fatal(http.ListenAndServe(":"+port, mux))
+	srv := &http.Server{Addr: ":" + env("PORT", "4003"), Handler: mux}
+	go func() {
+		<-ctx.Done()
+		log.Println("[payments] shutting down")
+		_ = srv.Shutdown(context.Background())
+	}()
+
+	fmt.Printf("💳 Payments Go (DDD + Valkey async) running at http://localhost:%s/graphql\n", env("PORT", "4003"))
+	log.Fatal(srv.ListenAndServe())
 }
 
 func env(key, def string) string {

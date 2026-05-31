@@ -16,7 +16,6 @@ const (
 
 // ─── Payment entity ───────────────────────────────────────────────────────────
 
-// Payment is immutable after creation — a financial record of a capture event.
 type Payment struct {
 	id             string
 	orderID        string
@@ -27,6 +26,22 @@ type Payment struct {
 	processedAt    time.Time
 }
 
+// NewInitiatedPayment creates a Payment in INITIATED state.
+// It is persisted immediately so the command is idempotency-safe,
+// then a background consumer transitions it to CAPTURED.
+func NewInitiatedPayment(id, orderID, amount, idem string) *Payment {
+	return &Payment{
+		id:             id,
+		orderID:        orderID,
+		status:         PaymentStatusInitiated,
+		amount:         amount,
+		currency:       "BRL",
+		idempotencyKey: idem,
+	}
+}
+
+// NewPayment creates a Payment already CAPTURED — used only for reconstruction
+// from legacy rows or synchronous test scenarios.
 func NewPayment(id, orderID, amount, idem string) *Payment {
 	return &Payment{
 		id:             id,

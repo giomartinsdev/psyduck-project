@@ -82,12 +82,15 @@ test.describe('Complete checkout and payment flow', () => {
     await expect(page.locator('#checkout-pay-btn')).toBeVisible({ timeout: 15_000 });
     await expect(page.locator('text=Mock payment terminal')).toBeVisible();
 
-    // ── 7. Complete payment → processPayment mutation fires ────────────────
+    // ── 7. Complete payment → processPayment fires (returns INITIATED),
+    //        client polls order(id) until CAPTURED, then shows success ────────
     await page.click('#checkout-pay-btn');
 
-    // Success screen
-    await expect(page.locator('h1')).toContainText('Order Confirmed!', { timeout: 15_000 });
-    await expect(page.locator('span', { hasText: 'CAPTURED' })).toBeVisible();
+    // Success screen appears once the polling loop resolves CAPTURED status
+    // (consumer is fast in local Docker; in prod this could take seconds)
+    await expect(page.locator('h1')).toContainText('Order Confirmed!', { timeout: 20_000 });
+    // Payment status is set from polling — should already be CAPTURED when success page renders
+    await expect(page.locator('[data-testid="payment-status"]')).toHaveText('CAPTURED', { timeout: 10_000 });
 
     // Payment amount should be a non-zero BRL value
     const amountText = await page.locator('strong').first().textContent();

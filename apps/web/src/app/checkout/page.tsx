@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useMutation, gql } from '@apollo/client';
+import { useMutation, useApolloClient, gql } from '@apollo/client';
 import { useRouter } from 'next/navigation';
 import { useCart } from '../../context/CartContext';
 import { useAuth } from '../../context/AuthContext';
@@ -21,6 +21,13 @@ const PROCESS_PAYMENT = gql`
   }
 `;
 
+// Polled after processPayment returns INITIATED — waits for async consumer to CAPTURE
+const POLL_ORDER = gql`
+  query PollOrder($id: UUID!) {
+    order(id: $id) { id status payment { id status amount currency processedAt } }
+  }
+`;
+
 type Step = 'shipping' | 'payment' | 'success';
 
 export default function CheckoutPage() {
@@ -31,9 +38,11 @@ export default function CheckoutPage() {
     typeof crypto !== 'undefined' ? crypto.randomUUID() : `idem-${Date.now()}`
   );
 
+  const apolloClient = useApolloClient();
   const [step, setStep] = useState<Step>('shipping');
   const [orderId, setOrderId] = useState<string | null>(null);
   const [paymentResult, setPaymentResult] = useState<{ amount: string; status: string } | null>(null);
+  const [polling, setPolling] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [shipping, setShipping] = useState({ street: '', city: '', state: '', postalCode: '', country: 'Brasil' });
@@ -80,15 +89,36 @@ export default function CheckoutPage() {
     if (!orderId) return;
     setError(null);
     try {
-      // Use same idempotency key prefix + "-pay" to scope payment separately
       const payKey = `${idempotencyKeyRef.current}-pay`;
-      const { data } = await processPayment({
+      // processPayment returns INITIATED immediately — the async consumer captures it
+      await processPayment({
         variables: { input: { orderId, idempotencyKey: payKey } },
       });
-      setPaymentResult({ amount: data.processPayment.amount, status: data.processPayment.status });
+
+      // Poll order(id).payment.status until CAPTURED (consumer finishes async work)
+      setPolling(true);
+      let capturedResult: { amount: string; status: string } | null = null;
+      for (let attempt = 0; attempt < 30; attempt++) {
+        await new Promise(r => setTimeout(r, 500));
+        const { data } = await apolloClient.query({
+          query: POLL_ORDER,
+          variables: { id: orderId },
+          fetchPolicy: 'network-only',
+        });
+        const payStatus = data?.order?.payment?.status;
+        if (payStatus === 'CAPTURED') {
+          capturedResult = { amount: data.order.payment.amount, status: payStatus };
+          break;
+        }
+      }
+      setPolling(false);
+      if (!capturedResult) throw new Error('Payment confirmation timed out — please check your orders.');
+      // Batch both updates so the success page renders with paymentResult already set
+      setPaymentResult(capturedResult);
       clear();
       setStep('success');
     } catch (err) {
+      setPolling(false);
       setError((err as Error).message);
     }
   };
@@ -102,7 +132,7 @@ export default function CheckoutPage() {
           Payment of <strong>{fmt(parseFloat(paymentResult?.amount ?? '0'))}</strong> captured successfully.
         </p>
         <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)', marginBottom: 'var(--space-8)' }}>
-          Status: <span style={{ color: 'var(--color-success)' }}>{paymentResult?.status}</span>
+          Status: <span data-testid="payment-status" style={{ color: 'var(--color-success)' }}>{paymentResult?.status}</span>
         </p>
         <div style={{ display: 'flex', gap: 'var(--space-4)', justifyContent: 'center' }}>
           <Link href="/orders"><Button size="lg" id="success-orders-btn">View My Orders</Button></Link>
@@ -159,8 +189,8 @@ export default function CheckoutPage() {
                 <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--text-sm)' }}>Mock payment terminal — no real card required</p>
               </div>
               {error && <p style={{ color: 'var(--color-error)', fontSize: 'var(--text-sm)' }}>{error}</p>}
-              <Button id="checkout-pay-btn" size="lg" fullWidth isLoading={payLoading} onClick={handlePayment}>
-                Pay {fmt(subtotal)}
+              <Button id="checkout-pay-btn" size="lg" fullWidth isLoading={payLoading || polling} onClick={handlePayment}>
+                {polling ? 'Confirming payment…' : `Pay ${fmt(subtotal)}`}
               </Button>
             </div>
           )}

@@ -21,10 +21,12 @@ export default defineConfig({
     },
   ],
 
+  // Web app runs in Docker — no local server to start.
+  // Run `docker compose up -d` before running tests.
   webServer: {
-    command: 'npm run dev',
+    command: 'echo "web is served by Docker on :3000"',
     port: 3000,
     reuseExistingServer: true,
-    timeout: 60_000,
+    timeout: 120_000,
   },
 });

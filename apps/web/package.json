@@ -2,6 +2,11 @@
   "name": "@psyduck-project/web",
   "version": "0.0.1",
   "private": true,
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000"
+  },
   "dependencies": {
     "@apollo/client": "^3.14.1",
     "graphql": "^16.14.0",
