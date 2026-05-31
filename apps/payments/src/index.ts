@@ -1,9 +1,13 @@
+import 'reflect-metadata';
 import { ApolloServer } from '@apollo/server';
 import { startStandaloneServer } from '@apollo/server/standalone';
 import { buildSubgraphSchema } from '@apollo/subgraph';
 import { gql } from 'graphql-tag';
-import { Pool } from 'pg';
+import { MikroORM } from '@mikro-orm/core';
+import { defineConfig } from '@mikro-orm/postgresql';
 import { v4 as uuidv4 } from 'uuid';
+import { OrderEntity, type OrderItemJson, type ShippingAddressJson } from './order.entity';
+import { PaymentEntity } from './payment.entity';
 
 const PRODUCTS_URL = process.env['PRODUCTS_SUBGRAPH_URL'] ?? 'http://localhost:4002/graphql';
 
@@ -21,77 +25,47 @@ async function fetchProduct(productId: string): Promise<{ title: string; price: 
   }
 }
 
-const pool = new Pool({
-  host: process.env['DB_HOST'] ?? 'localhost',
-  port: Number(process.env['DB_PORT'] ?? 5432),
-  database: process.env['DB_NAME'] ?? 'payments_db',
-  user: process.env['DB_USER'] ?? 'users_user',
-  password: process.env['DB_PASSWORD'] ?? 'users_pwd',
-});
+// ─── MikroORM ─────────────────────────────────────────────────────────────────
+let orm: MikroORM;
 
-async function initDb() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS orders (
-      id UUID PRIMARY KEY,
-      user_id TEXT NOT NULL DEFAULT 'unknown',
-      status TEXT NOT NULL DEFAULT 'PENDING',
-      items JSONB NOT NULL DEFAULT '[]',
-      shipping_address JSONB NOT NULL DEFAULT '{}',
-      subtotal NUMERIC(10,2) NOT NULL DEFAULT 0,
-      total NUMERIC(10,2) NOT NULL DEFAULT 0,
-      idempotency_key TEXT NOT NULL UNIQUE,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS payments (
-      id UUID PRIMARY KEY,
-      order_id UUID NOT NULL REFERENCES orders(id),
-      status TEXT NOT NULL,
-      amount NUMERIC(10,2) NOT NULL,
-      currency TEXT NOT NULL DEFAULT 'BRL',
-      idempotency_key TEXT NOT NULL UNIQUE,
-      processed_at TIMESTAMPTZ
-    )
-  `);
+async function initOrm() {
+  orm = await MikroORM.init(defineConfig({
+    host: process.env['DB_HOST'] ?? 'localhost',
+    port: Number(process.env['DB_PORT'] ?? 5432),
+    dbName: process.env['DB_NAME'] ?? 'payments_db',
+    user: process.env['DB_USER'] ?? 'users_user',
+    password: process.env['DB_PASSWORD'] ?? 'users_pwd',
+    entities: [OrderEntity, PaymentEntity],
+    debug: false,
+  }));
+  await orm.schema.updateSchema({ safe: true });
 }
 
-type DbOrder = {
-  id: string; user_id: string; status: string;
-  items: Record<string, unknown>[]; shipping_address: Record<string, string>;
-  subtotal: string; total: string; idempotency_key: string;
-  created_at: Date; updated_at: Date;
-};
-type DbPayment = {
-  id: string; order_id: string; status: string;
-  amount: string; currency: string; idempotency_key: string; processed_at: Date | null;
-};
-
-function rowToOrder(row: DbOrder) {
+// ─── Mappers ──────────────────────────────────────────────────────────────────
+function toOrder(o: OrderEntity) {
   return {
-    id: row.id,
-    userId: row.user_id,
-    status: row.status,
-    items: row.items,
-    shippingAddress: row.shipping_address,
-    subtotal: row.subtotal,
-    total: row.total,
-    idempotencyKey: row.idempotency_key,
-    createdAt: row.created_at.toISOString(),
-    updatedAt: row.updated_at.toISOString(),
+    id: o.id,
+    userId: o.userId,
+    status: o.status,
+    items: o.items,
+    shippingAddress: o.shippingAddress,
+    subtotal: String(o.subtotal),
+    total: String(o.total),
+    idempotencyKey: o.idempotencyKey,
+    createdAt: o.createdAt.toISOString(),
+    updatedAt: o.updatedAt.toISOString(),
   };
 }
 
-function rowToPayment(row: DbPayment) {
+function toPayment(p: PaymentEntity) {
   return {
-    id: row.id,
-    orderId: row.order_id,
-    status: row.status,
-    amount: row.amount,
-    currency: row.currency,
-    idempotencyKey: row.idempotency_key,
-    processedAt: row.processed_at?.toISOString() ?? null,
+    id: p.id,
+    orderId: p.order.id,
+    status: p.status,
+    amount: String(p.amount),
+    currency: p.currency,
+    idempotencyKey: p.idempotencyKey,
+    processedAt: p.processedAt?.toISOString() ?? null,
   };
 }
 
@@ -100,6 +74,7 @@ const decodeCursor = (c: string) => {
   try { return parseInt(Buffer.from(c, 'base64').toString().split(':')[1] ?? '0', 10); } catch { return 0; }
 };
 
+// ─── SDL ──────────────────────────────────────────────────────────────────────
 const typeDefs = gql`
   extend schema
     @link(url: "https://specs.apollo.dev/federation/v2.0", import: ["@key", "@shareable"])
@@ -220,18 +195,18 @@ const typeDefs = gql`
   }
 `;
 
+// ─── Resolvers ────────────────────────────────────────────────────────────────
 const resolvers = {
   Query: {
     async myOrders(_: unknown, { first, after }: { first?: number; after?: string }) {
+      const em = orm.em.fork();
       const start = after ? decodeCursor(after) + 1 : 0;
       const f = first ?? 10;
-      const { rows } = await pool.query<DbOrder>(
-        'SELECT * FROM orders ORDER BY created_at DESC LIMIT $1 OFFSET $2',
-        [f, start],
+      const [orders, total] = await em.findAndCount(
+        OrderEntity, {},
+        { orderBy: { createdAt: 'DESC' }, limit: f, offset: start },
       );
-      const { rows: countRows } = await pool.query<{ count: string }>('SELECT COUNT(*) FROM orders');
-      const total = parseInt(countRows[0]!.count, 10);
-      const edges = rows.map((row, i) => ({ cursor: encodeCursor(start + i), node: rowToOrder(row) }));
+      const edges = orders.map((o, i) => ({ cursor: encodeCursor(start + i), node: toOrder(o) }));
       return {
         edges,
         pageInfo: {
@@ -243,17 +218,22 @@ const resolvers = {
         totalCount: total,
       };
     },
+
     async order(_: unknown, { id }: { id: string }) {
-      const { rows } = await pool.query<DbOrder>('SELECT * FROM orders WHERE id = $1', [id]);
-      return rows[0] ? rowToOrder(rows[0]) : null;
+      const em = orm.em.fork();
+      const o = await em.findOne(OrderEntity, { id });
+      return o ? toOrder(o) : null;
     },
   },
-  Mutation: {
-    async createOrder(_: unknown, { input }: { input: { items: { productId: string; quantity: number }[]; shippingAddress: Record<string, string>; idempotencyKey: string } }) {
-      const existing = await pool.query<DbOrder>('SELECT * FROM orders WHERE idempotency_key = $1', [input.idempotencyKey]);
-      if (existing.rows[0]) return rowToOrder(existing.rows[0]);
 
-      const items = await Promise.all(input.items.map(async (item) => {
+  Mutation: {
+    async createOrder(_: unknown, { input }: { input: { items: { productId: string; quantity: number }[]; shippingAddress: ShippingAddressJson; idempotencyKey: string } }) {
+      const em = orm.em.fork();
+
+      const existing = await em.findOne(OrderEntity, { idempotencyKey: input.idempotencyKey });
+      if (existing) return toOrder(existing);
+
+      const items: OrderItemJson[] = await Promise.all(input.items.map(async (item) => {
         const product = await fetchProduct(item.productId);
         const unitPrice = parseFloat(product?.price ?? '99.00');
         return {
@@ -266,54 +246,69 @@ const resolvers = {
           subtotal: (unitPrice * item.quantity).toFixed(2),
         };
       }));
+
       const subtotal = items.reduce((s, it) => s + parseFloat(it.subtotal), 0).toFixed(2);
-      const id = uuidv4();
 
-      await pool.query(
-        `INSERT INTO orders (id, user_id, status, items, shipping_address, subtotal, total, idempotency_key)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-        [id, 'unknown', 'PENDING', JSON.stringify(items), JSON.stringify(input.shippingAddress), subtotal, subtotal, input.idempotencyKey],
-      );
+      const order = em.create(OrderEntity, {
+        userId: 'unknown',
+        status: 'PENDING',
+        items,
+        shippingAddress: input.shippingAddress,
+        subtotal,
+        total: subtotal,
+        idempotencyKey: input.idempotencyKey,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
 
-      const { rows } = await pool.query<DbOrder>('SELECT * FROM orders WHERE id = $1', [id]);
-      return rowToOrder(rows[0]!);
+      await em.persistAndFlush(order);
+      return toOrder(order);
     },
+
     async processPayment(_: unknown, { input }: { input: { orderId: string; idempotencyKey: string } }) {
-      const existing = await pool.query<DbPayment>('SELECT * FROM payments WHERE idempotency_key = $1', [input.idempotencyKey]);
-      if (existing.rows[0]) return rowToPayment(existing.rows[0]);
+      const em = orm.em.fork();
 
-      const orderResult = await pool.query<DbOrder>('SELECT * FROM orders WHERE id = $1', [input.orderId]);
-      const order = orderResult.rows[0];
-      const amount = order?.total ?? '0.00';
-      const paymentId = uuidv4();
+      const existing = await em.findOne(PaymentEntity, { idempotencyKey: input.idempotencyKey });
+      if (existing) return toPayment(existing);
 
-      await pool.query(
-        `INSERT INTO payments (id, order_id, status, amount, currency, idempotency_key, processed_at)
-         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-        [paymentId, input.orderId, 'CAPTURED', amount, 'BRL', input.idempotencyKey],
-      );
-      await pool.query(`UPDATE orders SET status = 'PAID', updated_at = NOW() WHERE id = $1`, [input.orderId]);
+      const order = await em.findOneOrFail(OrderEntity, { id: input.orderId });
 
-      const { rows } = await pool.query<DbPayment>('SELECT * FROM payments WHERE id = $1', [paymentId]);
-      return rowToPayment(rows[0]!);
+      const payment = em.create(PaymentEntity, {
+        order,
+        status: 'CAPTURED',
+        amount: order.total,
+        currency: 'BRL',
+        idempotencyKey: input.idempotencyKey,
+        processedAt: new Date(),
+      });
+
+      order.status = 'PAID';
+      order.updatedAt = new Date();
+
+      await em.persistAndFlush([payment, order]);
+      return toPayment(payment);
     },
   },
+
   Order: {
     async payment(order: { id: string }) {
-      const { rows } = await pool.query<DbPayment>('SELECT * FROM payments WHERE order_id = $1', [order.id]);
-      return rows[0] ? rowToPayment(rows[0]) : null;
+      const em = orm.em.fork();
+      const p = await em.findOne(PaymentEntity, { order: order.id as never });
+      return p ? toPayment(p) : null;
     },
     async __resolveReference(ref: { id: string }) {
-      const { rows } = await pool.query<DbOrder>('SELECT * FROM orders WHERE id = $1', [ref.id]);
-      return rows[0] ? rowToOrder(rows[0]) : null;
+      const em = orm.em.fork();
+      const o = await em.findOne(OrderEntity, { id: ref.id });
+      return o ? toOrder(o) : null;
     },
   },
 };
 
+// ─── Bootstrap ────────────────────────────────────────────────────────────────
 const server = new ApolloServer({ schema: buildSubgraphSchema({ typeDefs, resolvers }) });
 
 async function main() {
-  await initDb();
+  await initOrm();
   const { url } = await startStandaloneServer(server, { listen: { port: Number(process.env['PORT'] ?? 4003) } });
   console.log(`💳 Payments subgraph running at: ${url}`);
 }
