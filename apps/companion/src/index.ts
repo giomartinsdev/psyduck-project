@@ -138,8 +138,8 @@ const typeDefs = gql`
 // ─── Resolvers ────────────────────────────────────────────────────────────────
 const resolvers = {
   Query: {
-    async myConversations(_: unknown, __: unknown, ctx: Context) {
-      const userId = requireAuth(ctx);
+    async myConversations(_: unknown, __: unknown, ctx: unknown) {
+      const userId = requireAuth(ctx as Context);
       const em = orm.em.fork();
       const conversations = await em.find(ConversationEntity, { userId }, {
         populate: ['messages'],
@@ -156,16 +156,16 @@ const resolvers = {
   },
 
   Mutation: {
-    async startConversation(_: unknown, __: unknown, ctx: Context) {
-      const userId = requireAuth(ctx);
+    async startConversation(_: unknown, __: unknown, ctx: unknown) {
+      const userId = requireAuth(ctx as Context);
       const em = orm.em.fork();
       const conv = em.create(ConversationEntity, { userId, createdAt: new Date(), updatedAt: new Date() });
       await em.persistAndFlush(conv);
       return toConversation(conv);
     },
 
-    async sendAIMessage(_: unknown, { input }: { input: { conversationId?: string; content: string } }, ctx: Context) {
-      const userId = requireAuth(ctx);
+    async sendAIMessage(_: unknown, { input }: { input: { conversationId?: string; content: string } }, ctx: unknown) {
+      const userId = requireAuth(ctx as Context);
       const em = orm.em.fork();
 
       let conv: ConversationEntity;

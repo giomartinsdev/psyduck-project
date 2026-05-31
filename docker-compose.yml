@@ -122,14 +122,16 @@ services:
       start_period: 15s
 
   payments:
-    build: .
+    build:
+      context: ./apps/payments-go
+      dockerfile: Dockerfile
     container_name: psyduck-payments
-    working_dir: /app/apps/payments
-    command: npx ts-node src/index.ts
     ports:
       - "4003:4003"
     depends_on:
       postgres:
+        condition: service_healthy
+      users:
         condition: service_healthy
     environment:
       PORT: 4003
@@ -141,11 +143,11 @@ services:
       PRODUCTS_SUBGRAPH_URL: http://products:4002/graphql
       USERS_AUTH_URL: http://users:4001
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"require('http').get({hostname:'localhost',port:4003,path:'/graphql'},(r)=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))\""]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4003/graphql || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
-      start_period: 15s
+      start_period: 20s
 
   companion:
     build: .
@@ -180,7 +182,7 @@ services:
     build: .
     container_name: psyduck-gateway
     working_dir: /app/apps/gateway
-    command: npx ts-node src/index.ts
+    command: npx ts-node src/main.ts
     ports:
       - "4000:4000"
     depends_on:

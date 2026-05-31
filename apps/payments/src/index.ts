@@ -221,8 +221,8 @@ const typeDefs = gql`
 // ─── Resolvers ────────────────────────────────────────────────────────────────
 const resolvers = {
   Query: {
-    async myOrders(_: unknown, { first, after }: { first?: number; after?: string }, ctx: Context) {
-      const userId = requireAuth(ctx);
+    async myOrders(_: unknown, { first, after }: { first?: number; after?: string }, ctx: unknown) {
+      const userId = requireAuth(ctx as Context);
       const em = orm.em.fork();
       const start = after ? decodeCursor(after) + 1 : 0;
       const f = first ?? 10;
@@ -251,8 +251,8 @@ const resolvers = {
   },
 
   Mutation: {
-    async createOrder(_: unknown, { input }: { input: { items: { productId: string; quantity: number }[]; shippingAddress: ShippingAddressJson; idempotencyKey: string } }, ctx: Context) {
-      const userId = requireAuth(ctx);
+    async createOrder(_: unknown, { input }: { input: { items: { productId: string; quantity: number }[]; shippingAddress: ShippingAddressJson; idempotencyKey: string } }, ctx: unknown) {
+      const userId = requireAuth(ctx as Context);
       const em = orm.em.fork();
 
       const existing = await em.findOne(OrderEntity, { idempotencyKey: input.idempotencyKey });
@@ -290,8 +290,8 @@ const resolvers = {
       return toOrder(order);
     },
 
-    async processPayment(_: unknown, { input }: { input: { orderId: string; idempotencyKey: string } }, ctx: Context) {
-      const userId = requireAuth(ctx);
+    async processPayment(_: unknown, { input }: { input: { orderId: string; idempotencyKey: string } }, ctx: unknown) {
+      const userId = requireAuth(ctx as Context);
       const em = orm.em.fork();
 
       const existing = await em.findOne(PaymentEntity, { idempotencyKey: input.idempotencyKey });

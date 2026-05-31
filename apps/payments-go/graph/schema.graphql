@@ -1,0 +1,117 @@
+extend schema
+  @link(url: "https://specs.apollo.dev/federation/v2.0", import: ["@key", "@shareable"])
+
+scalar DateTime
+scalar UUID
+scalar Decimal
+
+type PageInfo @shareable {
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+  endCursor: String
+}
+
+enum OrderStatus {
+  PENDING
+  PROCESSING
+  PAID
+  FULFILLED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  INITIATED
+  AUTHORIZED
+  CAPTURED
+  FAILED
+  REFUNDED
+}
+
+type ShippingAddress {
+  street: String!
+  city: String!
+  state: String!
+  postalCode: String!
+  country: String!
+}
+
+type OrderItem {
+  id: UUID!
+  productId: UUID!
+  productTitle: String!
+  productImageUrl: String!
+  quantity: Int!
+  unitPrice: Decimal!
+  subtotal: Decimal!
+}
+
+type Payment {
+  id: UUID!
+  orderId: UUID!
+  status: PaymentStatus!
+  amount: Decimal!
+  currency: String!
+  idempotencyKey: String!
+  processedAt: DateTime
+}
+
+type Order @key(fields: "id") {
+  id: UUID!
+  userId: UUID!
+  status: OrderStatus!
+  items: [OrderItem!]!
+  shippingAddress: ShippingAddress!
+  subtotal: Decimal!
+  total: Decimal!
+  payment: Payment
+  idempotencyKey: String!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+type OrderEdge {
+  cursor: String!
+  node: Order!
+}
+
+type OrderConnection {
+  edges: [OrderEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input ShippingAddressInput {
+  street: String!
+  city: String!
+  state: String!
+  postalCode: String!
+  country: String!
+}
+
+input OrderItemInput {
+  productId: UUID!
+  quantity: Int!
+}
+
+input CreateOrderInput {
+  items: [OrderItemInput!]!
+  shippingAddress: ShippingAddressInput!
+  idempotencyKey: String!
+}
+
+input ProcessPaymentInput {
+  orderId: UUID!
+  idempotencyKey: String!
+}
+
+type Query {
+  myOrders(first: Int, after: String): OrderConnection!
+  order(id: UUID!): Order
+}
+
+type Mutation {
+  createOrder(input: CreateOrderInput!): Order!
+  processPayment(input: ProcessPaymentInput!): Payment!
+}
