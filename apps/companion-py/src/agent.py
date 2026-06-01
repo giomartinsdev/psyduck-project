@@ -44,9 +44,12 @@ get_my_orders()
             detalhes do pedido, items, purchase history
   DO NOT use search_products for ANY order-related question.
 
-search_products(search="keyword")
-  USE WHEN: user asks about a product type (monitor, keyboard, headphones, etc.)
-  Pass search as a plain English word: search="keyboard" not search={"type":"string"}
+search_products(search="keyword", category=None)
+  USE WHEN: user asks about a product type (monitor, keyboard, mouse pad, etc.)
+  Pass ONLY the product name as search, ignore price/budget mentions.
+  Example: "mouse pad de 300 reais" → search="mouse pad", category=None
+  Example: "headphone barato" → search="headphone", category=None
+  NEVER pass {"type":"string"} — only plain text or omit the argument.
 
 get_featured_products()
   USE WHEN: greetings, recommendations, "what do you have", "mostrar produtos"
@@ -247,10 +250,80 @@ def build_graph(tools: list):
         tool_data = dict(state.get("tool_data") or {})
         for tc in last.tool_calls:
             raw_args = tc.get("args") or {}
-            safe_args = {
-                k: (str(v) if isinstance(v, (dict, list)) else (v or ""))
-                for k, v in raw_args.items()
+            # Detect and discard schema descriptors the small model sometimes passes:
+            # dict form:   {"category": {"type": "string"}}
+            # string form: {"category": "{'type': 'string'}"}  ← str() of the above
+            import re as _re
+            _schema = _re.compile(r"""^\{['"]type['"]\s*:""")
+            safe_args: dict = {}
+            for k, v in raw_args.items():
+                if isinstance(v, (dict, list)):
+                    safe_args[k] = ""            # schema dict → use tool default
+                elif isinstance(v, str) and _schema.match(v.strip()):
+                    safe_args[k] = ""            # stringified schema → use tool default
+                elif v is None:
+                    safe_args[k] = ""
+                else:
+                    safe_args[k] = v
+            # Translate common PT product terms to EN (WooCommerce catalog is in English)
+            _PT_EN: dict = {
+                "teclado": "keyboard", "teclados": "keyboard",
+                "fone de ouvido": "headphone", "fone": "headphone", "fones": "headphone",
+                "audifonos": "headphone", "audifono": "headphone",
+                "cadeira": "chair", "cadeiras": "chair",
+                "mesa": "desk", "mesas": "desk",
+                "microfone": "microphone", "microfones": "microphone",
+                "câmera": "camera", "webcam": "webcam",
+                "carregador": "charger", "carregadores": "charger",
+                "cabo": "cable", "cabos": "cable",
+                "armazenamento": "storage", "disco": "drive",
+                "rato": "mouse", "ratos": "mouse",
+                "suporte": "stand", "braço": "arm",
+                "sem fio": "wireless", "bluetooth": "bluetooth",
+                "mecânico": "mechanical", "mecânica": "mechanical",
+                "ergonômico": "ergonomic", "ergonômica": "ergonomic",
+                "gaming": "gaming", "gamer": "gaming",
+                "alto falante": "speaker", "caixa de som": "speaker",
+                "leve": "lightweight", "compacto": "compact",
+                "barato": "", "caro": "", "premium": "premium",
             }
+            if "search" in safe_args and safe_args["search"]:
+                s = safe_args["search"].lower().strip()
+                original = s
+                # Apply ALL PT→EN translations (longer phrases first to avoid partial matches)
+                for pt, en in sorted(_PT_EN.items(), key=lambda x: -len(x[0])):
+                    s = s.replace(pt, en if en else "").strip()
+                translated = s != original
+                # Strip price/budget fragments including PT prepositions (de, até, abaixo de)
+                s = _re.sub(
+                    r'\s*(de\s+|até\s+|abaixo\s+de\s+|under\s+|up\s+to\s+)?'
+                    r'r?\$?\s*\d[\d\.,]*\s*(reais?|brl|k|mil)?\s*',
+                    " ", s, flags=_re.IGNORECASE
+                ).strip()
+                # If a PT→EN translation occurred and result is multi-word,
+                # keep only the first keyword — WooCommerce search is single-term.
+                # Exception: keep "mouse pad" and "desk mat" as-is (they're proper product names).
+                _two_word_products = {"mouse pad", "desk mat", "cable tie"}
+                if translated and s and len(s.split()) >= 2 and s not in _two_word_products:
+                    s = s.split()[0]
+                safe_args["search"] = s.strip() or original
+
+            # Strip price/budget words from search terms — WooCommerce doesn't understand them
+            if "search" in safe_args and safe_args["search"]:
+                price_pattern = _re.compile(
+                    r'\s*(de\s+)?r?\$?\s*[\d\.,]+\s*(reais?|brl|mil|k)?\s*'
+                    r'|under\s+r?\$?\s*[\d\.,]+\s*'
+                    r'|abaixo\s+de\s+r?\$?\s*[\d\.,]+\s*'
+                    r'|até\s+r?\$?\s*[\d\.,]+\s*',
+                    _re.IGNORECASE
+                )
+                safe_args["search"] = price_pattern.sub("", safe_args["search"]).strip()
+            # Also clear invalid/hallucinated category values that aren't real WooCommerce categories
+            if "category" in safe_args and safe_args.get("category"):
+                valid_cats = {"Electronics", "Peripherals", "Displays", "Furniture",
+                              "Accessories", "Storage", "Networking", "Audio"}
+                if safe_args["category"] not in valid_cats:
+                    safe_args["category"] = ""
             log.info("[Tool] %s(%s)", tc["name"], safe_args)
             fn = tool_map.get(tc["name"])
             try:
