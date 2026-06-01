@@ -4,7 +4,6 @@ import React from 'react';
 import Link from 'next/link';
 import { useQuery, gql } from '@apollo/client';
 import { ProductCard, ProductCardFragment } from '../components/molecules/ProductCard';
-import { PostCard, PostCardFragment } from '../components/molecules/PostCard';
 import { Button } from '../components/atoms/Button';
 import { PageSpinner } from '../components/atoms/Spinner';
 
@@ -13,12 +12,8 @@ const HOME_QUERY = gql`
     featuredProducts(limit: 3) {
       ...ProductCard
     }
-    featuredPosts(limit: 2) {
-      ...PostCard
-    }
   }
   ${ProductCardFragment}
-  ${PostCardFragment}
 `;
 
 export default function HomePage() {
@@ -110,19 +105,6 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ─── Latest Posts ─────────────────────────────────────────── */}
-      <section className="section container">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-8)' }}>
-          <h2 className="heading-3">From the Blog</h2>
-        </div>
-        {loading ? <PageSpinner /> : (
-          <div className="grid-posts">
-            {data?.featuredPosts?.map((p: Parameters<typeof PostCard>[0]['post']) => (
-              <PostCard key={p.id} post={p} />
-            ))}
-          </div>
-        )}
-      </section>
     </main>
   );
 }

@@ -65,30 +65,6 @@ type ProductConnection {
   totalCount: Int!
 }
 
-type Post {
-  id: UUID!
-  slug: String!
-  title: String!
-  excerpt: String!
-  content: String!
-  imageUrl: String!
-  category: String!
-  tags: [String!]!
-  publishedAt: DateTime!
-  author: String!
-}
-
-type PostEdge {
-  cursor: String!
-  node: Post!
-}
-
-type PostConnection {
-  edges: [PostEdge!]!
-  pageInfo: PageInfo!
-  totalCount: Int!
-}
-
 # ─── Cart (frontend-only, not persisted) ────────────────────────────────────
 type CartItem {
   productId: UUID!
@@ -261,10 +237,6 @@ type Query {
   product(id: UUID!): Product
   featuredProducts(limit: Int): [Product!]!
 
-  # Posts
-  posts(first: Int, after: String, category: String): PostConnection!
-  post(id: UUID!): Post
-  featuredPosts(limit: Int): [Post!]!
 
   # Orders
   myOrders(first: Int, after: String): OrderConnection!

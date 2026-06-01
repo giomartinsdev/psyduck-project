@@ -165,25 +165,31 @@ services:
       start_period: 20s
 
   companion:
-    build: .
+    build:
+      context: ./apps/companion-py
+      dockerfile: Dockerfile
     container_name: psyduck-companion
-    working_dir: /app/apps/companion
-    command: npx ts-node src/index.ts
     ports:
       - "4004:4004"
     depends_on:
       postgres:
         condition: service_healthy
+      users:
+        condition: service_healthy
     environment:
-      PORT: 4004
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: companion_db
       DB_USER: users_user
       DB_PASSWORD: users_pwd
       USERS_AUTH_URL: http://users:4001
+      # GATEWAY_URL used at request time for MCP tool discovery — not at startup
+      GATEWAY_URL: http://gateway:4000/graphql
+      # Ollama runs on the host machine; host.docker.internal reaches it from the container
+      OLLAMA_URL: http://host.docker.internal:11434
+      OLLAMA_MODEL: llama3.2:3b
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"require('http').get({hostname:'localhost',port:4004,path:'/graphql'},(r)=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))\""]
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:4004/graphql')\" 2>/dev/null || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10

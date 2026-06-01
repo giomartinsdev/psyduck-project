@@ -15,7 +15,6 @@ import {
   MOCK_USER,
   MOCK_TOKEN,
   MOCK_PRODUCTS,
-  MOCK_POSTS,
   MOCK_ORDERS,
   MOCK_AI_CONVERSATION,
   MOCK_AI_RESPONSES,
@@ -134,18 +133,6 @@ const resolvers: Record<string, (variables: Variables) => unknown> = {
     featuredProducts: MOCK_PRODUCTS.slice(0, Number(limit) || 3),
   }),
 
-  // ── Posts ─────────────────────────────────────────────────────────────────
-  posts: ({ first, after }: Variables) => ({
-    posts: paginate(MOCK_POSTS, Number(first) || 3, after as string),
-  }),
-
-  post: ({ id }: Variables) => ({
-    post: MOCK_POSTS.find(p => p.id === id || p.slug === id) ?? null,
-  }),
-
-  featuredPosts: ({ limit }: Variables) => ({
-    featuredPosts: MOCK_POSTS.slice(0, Number(limit) || 2),
-  }),
 
   // ── Orders ────────────────────────────────────────────────────────────────
   myOrders: ({ first, after }: Variables) => ({

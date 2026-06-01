@@ -39,8 +39,7 @@ export function CatalogueClient({ initialProducts }: Props) {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
-
-  const isFiltered = selectedCategory !== 'All' || search !== '';
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const { data, loading, fetchMore } = useQuery(CATALOGUE_QUERY, {
     variables: {
@@ -49,17 +48,34 @@ export function CatalogueClient({ initialProducts }: Props) {
       category: selectedCategory === 'All' ? null : selectedCategory,
       search: search || null,
     },
-    skip: !isFiltered,
+    // Never skip — fetchMore only works on an active query.
+    // Fall back to SSR initialProducts while the client query is loading.
   });
 
-  const activeProducts: ProductsConnection = isFiltered
-    ? (data?.products ?? { edges: [], pageInfo: { hasNextPage: false, endCursor: null }, totalCount: 0 })
-    : initialProducts;
+  // Use live Apollo data once the client query has resolved;
+  // otherwise show the ISR-rendered initialProducts.
+  const activeProducts: ProductsConnection =
+    data?.products ??
+    (search || selectedCategory !== 'All'
+      ? { edges: [], pageInfo: { hasNextPage: false, endCursor: null }, totalCount: 0 }
+      : initialProducts);
 
   const handleLoadMore = async () => {
     const endCursor = activeProducts.pageInfo.endCursor;
-    if (!endCursor) return;
-    await fetchMore({ variables: { after: endCursor } });
+    if (!endCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      await fetchMore({
+        variables: {
+          after: endCursor,
+          first: PAGE_SIZE,
+          category: selectedCategory === 'All' ? null : selectedCategory,
+          search: search || null,
+        },
+      });
+    } finally {
+      setLoadingMore(false);
+    }
   };
 
   const handleSearch = (e: React.FormEvent) => {
@@ -100,7 +116,11 @@ export function CatalogueClient({ initialProducts }: Props) {
           }}
         />
         <Button type="submit" variant="secondary" size="md">Search</Button>
-        {search && <Button variant="ghost" size="md" onClick={() => { setSearch(''); setSearchInput(''); }}>Clear</Button>}
+        {search && (
+          <Button variant="ghost" size="md" onClick={() => { setSearch(''); setSearchInput(''); }}>
+            Clear
+          </Button>
+        )}
       </form>
 
       {/* Category Tabs */}
@@ -126,21 +146,32 @@ export function CatalogueClient({ initialProducts }: Props) {
       </div>
 
       {/* Grid */}
-      {loading ? <PageSpinner /> : (
+      {loading && !data ? (
+        <PageSpinner />
+      ) : (
         <>
           <div className="grid-products">
             {activeProducts.edges.map(({ node }) => (
               <ProductCard key={node.id} product={node} />
             ))}
           </div>
-          {activeProducts.edges.length === 0 && (
+
+          {activeProducts.edges.length === 0 && !loading && (
             <p style={{ textAlign: 'center', color: 'var(--color-text-secondary)', padding: 'var(--space-16) 0' }}>
               No products found.
             </p>
           )}
+
           {hasNextPage && (
             <div style={{ textAlign: 'center', marginTop: 'var(--space-10)' }}>
-              <Button id="load-more-btn" variant="secondary" onClick={handleLoadMore}>Load More</Button>
+              <Button
+                id="load-more-btn"
+                variant="secondary"
+                isLoading={loadingMore}
+                onClick={handleLoadMore}
+              >
+                Load More
+              </Button>
             </div>
           )}
         </>
