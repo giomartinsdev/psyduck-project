@@ -1,101 +1,153 @@
 # Psyduck Project
 
-<a alt="Nx logo" href="https://nx.dev" target="_blank" rel="noreferrer"><img src="https://raw.githubusercontent.com/nrwl/nx/master/images/nx-logo.png" width="45"></a>
+A federated e-commerce platform built with GraphQL Federation v2. The system is composed of four independent subgraphs — users, products, payments, and AI companion — unified behind a single Apollo Gateway endpoint.
 
-✨ Your new, shiny [Nx workspace](https://nx.dev) is ready ✨.
+## Architecture
 
-[Learn more about this workspace setup and its capabilities](https://nx.dev/nx-api/next?utm_source=nx_project&amp;utm_medium=readme&amp;utm_campaign=nx_projects) or run `npx nx graph` to visually explore what was created. Now, let's get you up to speed!
-
-## Run tasks
-
-To run the dev server for your app, use:
-
-```sh
-npx nx dev web
+```
+Browser / Next.js (3000)
+        │
+        ▼
+Apollo Gateway (4000)  ─── OAuth2/PKCE exchange for Companion ───┐
+        │                                                          │
+   ┌────┼────────────────────────────────────┐                    │
+   ▼    ▼                  ▼                 ▼                    ▼
+Users  Products         Payments          Companion AI (4004)
+(4001)  (4002)          Go (4003)         Python/FastAPI
+NestJS  Apollo          gqlgen            Strawberry + LangGraph
+BetterAuth             Valkey streams     Ollama (host:11434)
+PostgreSQL             PostgreSQL
+                       Valkey
 ```
 
-To create a production bundle:
+| Service | Port | Language | Purpose |
+|---------|------|----------|---------|
+| Gateway | 4000 | TypeScript / NestJS | Apollo Federation hub |
+| Users | 4001 | TypeScript / NestJS + BetterAuth | Auth, identity, OIDC provider |
+| Products | 4002 | TypeScript / Apollo Server | Product catalog (WooCommerce or mock) |
+| Payments | 4003 | Go / gqlgen | Orders, async payment capture |
+| Companion | 4004 | Python / FastAPI + LangGraph | AI shopping assistant |
+| Web | 3000 | Next.js 14 | E-commerce frontend |
+| PostgreSQL | 5432 | — | Users, Payments, Companion databases |
+| Valkey | 6379 | — | Redis-compatible stream for async payments |
+| WordPress | 8080 | — | Optional WooCommerce product backend |
 
-```sh
-npx nx build web
+## Prerequisites
+
+- Docker and Docker Compose
+- Node.js 20+ and npm (for local dev without Docker)
+- Go 1.23+ (for local dev of the Payments service)
+- Python 3.12+ (for local dev of the Companion service)
+- [Ollama](https://ollama.com) with `llama3.2:3b` pulled (for the AI Companion)
+
+```bash
+# Pull the Ollama model once
+ollama pull llama3.2:3b
 ```
 
-To see all available targets to run for a project, run:
+## Quick Start (Docker)
 
-```sh
-npx nx show project web
+```bash
+# 1. Clone and enter the repo
+git clone <repo-url> psyduck-project
+cd psyduck-project
+
+# 2. Bring up the full stack
+docker compose up -d
+
+# 3. Wait for all services to be healthy (takes ~2 min on first run)
+docker compose ps
+
+# 4. Open the app
+open http://localhost:3000
 ```
 
-These targets are either [inferred automatically](https://nx.dev/concepts/inferred-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) or defined in the `project.json` or `package.json` files.
+All services start in dependency order:
+`postgres` → `users` → `products` + `payments` + `companion` → `gateway` → `web`
 
-[More about running tasks in the docs &raquo;](https://nx.dev/features/run-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+WordPress starts in parallel but is optional — Products falls back to mock data if it is unavailable.
 
-## Add new projects
+## Quick Start (Local Dev)
 
-While you could add new projects to your workspace manually, you might want to leverage [Nx plugins](https://nx.dev/concepts/nx-plugins?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) and their [code generation](https://nx.dev/features/generate-code?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) feature.
+Run infrastructure containers only, then start services as Node/Go/Python processes.
 
-Use the plugin's generator to create new projects.
+```bash
+# Step 1 — infrastructure
+docker compose up -d postgres valkey
 
-To generate a new application, use:
+# Step 2 — install Node.js dependencies (all workspaces)
+npm install
 
-```sh
-npx nx g @nx/next:app demo
+# Step 3 — run services (each in a separate terminal)
+npm run dev:users       # terminal 1 → :4001
+npm run dev:products    # terminal 2 → :4002
+cd apps/payments-go && go run . &   # terminal 3 → :4003
+cd apps/companion-py && uvicorn src.main:app --reload --port 4004 &  # terminal 4
+npm run dev:gateway     # terminal 5 → :4000
+cd apps/web && npx next dev -p 3000  # terminal 6 → :3000
 ```
 
-To generate a new library, use:
+## Services
 
-```sh
-npx nx g @nx/react:lib mylib
+| Service | README |
+|---------|--------|
+| Gateway | [apps/gateway/README.md](apps/gateway/README.md) |
+| Users | [apps/users/README.md](apps/users/README.md) |
+| Products | [apps/products/README.md](apps/products/README.md) |
+| Payments (Go) | [apps/payments-go/README.md](apps/payments-go/README.md) |
+| Companion AI | [apps/companion-py/README.md](apps/companion-py/README.md) |
+| Web | [apps/web/README.md](apps/web/README.md) |
+| Infrastructure | [infra/README.md](infra/README.md) |
+| Load Testing | [load-test/README.md](load-test/README.md) |
+
+## Authentication Overview
+
+All requests carry a BetterAuth session token in the `Authorization: Bearer <token>` header.
+
+- **Users, Products, Payments** — the Gateway forwards the session token directly. Each subgraph validates it by calling `GET /api/auth/get-session` on the Users service.
+- **Companion AI** — the Gateway performs an OAuth2 Authorization Code + PKCE exchange server-side and injects the resulting access token. The Companion validates it via `/oauth2/userinfo`.
+
+See [apps/users/README.md](apps/users/README.md) for detailed auth flows.
+
+## Useful Commands
+
+```bash
+# Tail logs for a specific service
+docker compose logs -f gateway
+
+# Rebuild a single service after code changes
+docker compose build users && docker compose up -d --no-deps users
+
+# Run database migrations manually (Users subgraph)
+cd apps/users && npm run migration:up
+
+# GraphQL Codegen (regenerate TypeScript types for the Web app)
+cd apps/web && npm run codegen
+
+# Visualize the Nx project graph
+npx nx graph
+
+# Run k6 load tests
+k6 run load-test/k6.js
 ```
 
-You can use `npx nx list` to get a list of installed plugins. Then, run `npx nx list <plugin-name>` to learn about more specific capabilities of a particular plugin. Alternatively, [install Nx Console](https://nx.dev/getting-started/editor-setup?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) to browse plugins and generators in your IDE.
+## Monorepo Structure
 
-[Learn more about Nx plugins &raquo;](https://nx.dev/concepts/nx-plugins?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) | [Browse the plugin registry &raquo;](https://nx.dev/plugin-registry?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Set up CI!
-
-### Step 1
-
-To connect to Nx Cloud, run the following command:
-
-```sh
-npx nx connect
 ```
-
-Connecting to Nx Cloud ensures a [fast and scalable CI](https://nx.dev/ci/intro/why-nx-cloud?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) pipeline. It includes features such as:
-
-- [Remote caching](https://nx.dev/ci/features/remote-cache?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Task distribution across multiple machines](https://nx.dev/ci/features/distribute-task-execution?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Automated e2e test splitting](https://nx.dev/ci/features/split-e2e-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Task flakiness detection and rerunning](https://nx.dev/ci/features/flaky-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-### Step 2
-
-Use the following command to configure a CI workflow for your workspace:
-
-```sh
-npx nx g ci-workflow
+psyduck-project/
+├── apps/
+│   ├── gateway/          TypeScript · NestJS · Apollo Gateway
+│   ├── users/            TypeScript · NestJS · BetterAuth · MikroORM
+│   ├── products/         TypeScript · Apollo Server standalone
+│   ├── payments/         TypeScript stub (deprecated, replaced by payments-go)
+│   ├── payments-go/      Go · gqlgen · PostgreSQL · Valkey
+│   ├── companion/        TypeScript stub (deprecated, replaced by companion-py)
+│   ├── companion-py/     Python · FastAPI · Strawberry · LangGraph
+│   └── web/              Next.js 14 · Apollo Client · React 19
+├── infra/                Docker init scripts
+├── load-test/            k6 load test scenarios
+├── specs/                Feature specifications
+├── workflows/            SpecKit workflow docs
+├── docker-compose.yml    Full stack definition
+└── nx.json               Nx build system configuration
 ```
-
-[Learn more about Nx on CI](https://nx.dev/ci/intro/ci-with-nx#ready-get-started-with-your-provider?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Install Nx Console
-
-Nx Console is an editor extension that enriches your developer experience. It lets you run tasks, generate code, and improves code autocompletion in your IDE. It is available for VSCode and IntelliJ.
-
-[Install Nx Console &raquo;](https://nx.dev/getting-started/editor-setup?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Useful links
-
-Learn more:
-
-- [Learn more about this workspace setup](https://nx.dev/nx-api/next?utm_source=nx_project&amp;utm_medium=readme&amp;utm_campaign=nx_projects)
-- [Learn about Nx on CI](https://nx.dev/ci/intro/ci-with-nx?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Releasing Packages with Nx release](https://nx.dev/features/manage-releases?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [What are Nx plugins?](https://nx.dev/concepts/nx-plugins?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-And join the Nx community:
-- [Discord](https://go.nx.dev/community)
-- [Follow us on X](https://twitter.com/nxdevtools) or [LinkedIn](https://www.linkedin.com/company/nrwl)
-- [Our Youtube channel](https://www.youtube.com/@nxdevtools)
-- [Our blog](https://nx.dev/blog?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
