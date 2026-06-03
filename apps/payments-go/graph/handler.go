@@ -1,6 +1,3 @@
-// Package graph is the GraphQL-over-HTTP adapter for the payments subgraph.
-// It parses incoming requests, delegates to the application layer, and formats responses.
-// No business logic lives here.
 package graph
 
 import (
@@ -19,8 +16,6 @@ import (
 	"github.com/psyduck-project/payments-go/domain"
 )
 
-// ─── Auth context ─────────────────────────────────────────────────────────────
-
 type ctxKey string
 
 const UserIDKey ctxKey = "userId"
@@ -29,8 +24,6 @@ func UserIDFromCtx(ctx context.Context) string {
 	v, _ := ctx.Value(UserIDKey).(string)
 	return v
 }
-
-// ─── GraphQL wire types ───────────────────────────────────────────────────────
 
 type gqlRequest struct {
 	Query         string                 `json:"query"`
@@ -55,8 +48,6 @@ func errForbidden() gqlError {
 	return gqlError{Message: "Forbidden", Extensions: map[string]interface{}{"code": "FORBIDDEN"}}
 }
 func errInternal(msg string) gqlError { return gqlError{Message: msg} }
-
-// ─── GraphQL response shapes ──────────────────────────────────────────────────
 
 type gqlShippingAddress struct {
 	Street     string `json:"street"`
@@ -116,8 +107,6 @@ type gqlOrderConnection struct {
 	TotalCount int         `json:"totalCount"`
 }
 
-// ─── Schema SDL ───────────────────────────────────────────────────────────────
-
 const schemaSDL = `
 extend schema
   @link(url: "https://specs.apollo.dev/federation/v2.0", import: ["@key", "@shareable"])
@@ -157,8 +146,6 @@ input ProcessPaymentInput { orderId: UUID! idempotencyKey: String! }
 type Query { myOrders(first: Int, after: String): OrderConnection! order(id: UUID!): Order }
 type Mutation { createOrder(input: CreateOrderInput!): Order! processPayment(input: ProcessPaymentInput!): Payment! }
 `
-
-// ─── HTTP handler ─────────────────────────────────────────────────────────────
 
 type Handler struct {
 	createOrder    *application.CreateOrderHandler
@@ -221,8 +208,6 @@ func (h *Handler) dispatch(ctx context.Context, req gqlRequest) gqlResponse {
 		return gqlResponse{Data: map[string]string{"__typename": "Query"}}
 	}
 }
-
-// ─── Resolver implementations ─────────────────────────────────────────────────
 
 func (h *Handler) handleEntities(ctx context.Context, vars map[string]interface{}) gqlResponse {
 	reps, _ := vars["representations"].([]interface{})
@@ -305,7 +290,6 @@ func (h *Handler) handleCreateOrder(ctx context.Context, vars map[string]interfa
 		return gqlResponse{Errors: []gqlError{errUnauthorized()}}
 	}
 	inputMap := getMap(vars, "input")
-	// Idempotency key is scoped per-user in both the DB constraint and the lookup
 	cmd := application.CreateOrderCommand{
 		UserID:         userID,
 		IdempotencyKey: getString(inputMap, "idempotencyKey"),
@@ -361,8 +345,6 @@ func (h *Handler) handleProcessPayment(ctx context.Context, vars map[string]inte
 	return gqlResponse{Data: map[string]interface{}{"processPayment": toGQLPayment(payment)}}
 }
 
-// ─── Mappers ──────────────────────────────────────────────────────────────────
-
 func (h *Handler) toGQLOrder(ctx context.Context, o *domain.Order) *gqlOrder {
 	items := make([]gqlOrderItem, 0, len(o.Items()))
 	for _, it := range o.Items() {
@@ -378,7 +360,6 @@ func (h *Handler) toGQLOrder(ctx context.Context, o *domain.Order) *gqlOrder {
 	}
 	addr := o.ShippingAddr()
 
-	// Lazy-load payment (acceptable N+1 for single order responses)
 	var pay *gqlPayment
 	if p, err := h.payments.FindByOrderID(ctx, o.ID()); err == nil && p != nil {
 		pay = toGQLPayment(p)
@@ -425,8 +406,6 @@ func toGQLPayment(p *domain.Payment) *gqlPayment {
 	}
 }
 
-// ─── Cursor helpers ───────────────────────────────────────────────────────────
-
 func encodeCursor(offset int) string {
 	return base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("offset:%d", offset)))
 }
@@ -443,8 +422,6 @@ func decodeCursor(cursor string) int {
 	n, _ := strconv.Atoi(parts[1])
 	return n
 }
-
-// ─── Utility ──────────────────────────────────────────────────────────────────
 
 func writeJSON(w http.ResponseWriter, v interface{}) { _ = json.NewEncoder(w).Encode(v) }
 

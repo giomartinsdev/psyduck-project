@@ -15,9 +15,6 @@ const (
 	paymentsCommandConsumer = "payments-cmd-worker-1"
 )
 
-// PaymentCommandConsumer reads ProcessPaymentCommand entries from the commands
-// stream and performs the atomic capture: UPDATE payment → CAPTURED,
-// UPDATE order → PAID, then publishes an OrderPaidEvent.
 type PaymentCommandConsumer struct {
 	client   *redis.Client
 	payments *PostgresPaymentRepository
@@ -89,25 +86,21 @@ func (c *PaymentCommandConsumer) process(ctx context.Context, msg redis.XMessage
 
 	log.Printf("[cmd consumer] capturing payment id=%s orderID=%s amount=%s", paymentID, orderID, amount)
 
-	// Atomic: UPDATE payment → CAPTURED + UPDATE order → PAID
 	if err := c.payments.CaptureWithOrderUpdate(ctx, paymentID, orderID); err != nil {
-		log.Printf("[cmd consumer] WARN: capture failed for %s: %v — message stays pending for retry", paymentID, err)
-		return // do NOT ACK — message will be re-delivered
+		log.Printf("[cmd consumer] WARN: capture failed for %s: %v — retrying", paymentID, err)
+		return
 	}
 
-	// Reload updated payment to build the domain event with final state
 	payment, err := c.payments.FindByOrderID(ctx, orderID)
 	if err != nil {
 		log.Printf("[cmd consumer] WARN: could not reload payment after capture: %v", err)
 	}
 
-	// Load order for event enrichment
 	order, err := c.orders.FindByID(ctx, orderID)
 	if err != nil {
 		log.Printf("[cmd consumer] WARN: could not load order for event: %v", err)
 	}
 
-	// Publish OrderPaidEvent to the events stream
 	payID := ""
 	if payment != nil {
 		payID = payment.ID()
@@ -125,7 +118,6 @@ func (c *PaymentCommandConsumer) process(ctx context.Context, msg redis.XMessage
 	log.Printf("[cmd consumer] ✓ payment captured — orderID=%s paymentID=%s userID=%s amount=%s",
 		orderID, payID, userID, amount)
 
-	// ACK only after successful capture + event publication
 	if err := c.client.XAck(ctx, CommandsStream, paymentsCommandGroup, msg.ID).Err(); err != nil {
 		log.Printf("[cmd consumer] WARN: ACK failed for %s: %v", msg.ID, err)
 	}

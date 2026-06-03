@@ -2,8 +2,6 @@ package domain
 
 import "time"
 
-// ─── Payment status ───────────────────────────────────────────────────────────
-
 type PaymentStatus string
 
 const (
@@ -13,8 +11,6 @@ const (
 	PaymentStatusFailed     PaymentStatus = "FAILED"
 	PaymentStatusRefunded   PaymentStatus = "REFUNDED"
 )
-
-// ─── Payment entity ───────────────────────────────────────────────────────────
 
 type Payment struct {
 	id             string
@@ -26,9 +22,6 @@ type Payment struct {
 	processedAt    time.Time
 }
 
-// NewInitiatedPayment creates a Payment in INITIATED state.
-// It is persisted immediately so the command is idempotency-safe,
-// then a background consumer transitions it to CAPTURED.
 func NewInitiatedPayment(id, orderID, amount, idem string) *Payment {
 	return &Payment{
 		id:             id,
@@ -40,8 +33,6 @@ func NewInitiatedPayment(id, orderID, amount, idem string) *Payment {
 	}
 }
 
-// NewPayment creates a Payment already CAPTURED — used only for reconstruction
-// from legacy rows or synchronous test scenarios.
 func NewPayment(id, orderID, amount, idem string) *Payment {
 	return &Payment{
 		id:             id,
@@ -54,7 +45,6 @@ func NewPayment(id, orderID, amount, idem string) *Payment {
 	}
 }
 
-// ReconstructPayment rebuilds a Payment from persisted state.
 func ReconstructPayment(id, orderID string, status PaymentStatus, amount, currency, idem string, processedAt *time.Time) *Payment {
 	p := &Payment{
 		id:             id,
@@ -70,10 +60,10 @@ func ReconstructPayment(id, orderID string, status PaymentStatus, amount, curren
 	return p
 }
 
-func (p *Payment) ID() string              { return p.id }
-func (p *Payment) OrderID() string         { return p.orderID }
-func (p *Payment) Status() PaymentStatus   { return p.status }
-func (p *Payment) Amount() string          { return p.amount }
-func (p *Payment) Currency() string        { return p.currency }
-func (p *Payment) IdempotencyKey() string  { return p.idempotencyKey }
-func (p *Payment) ProcessedAt() time.Time  { return p.processedAt }
+func (p *Payment) ID() string             { return p.id }
+func (p *Payment) OrderID() string        { return p.orderID }
+func (p *Payment) Status() PaymentStatus  { return p.status }
+func (p *Payment) Amount() string         { return p.amount }
+func (p *Payment) Currency() string       { return p.currency }
+func (p *Payment) IdempotencyKey() string { return p.idempotencyKey }
+func (p *Payment) ProcessedAt() time.Time { return p.processedAt }

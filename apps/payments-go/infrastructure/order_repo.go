@@ -10,8 +10,6 @@ import (
 	"github.com/psyduck-project/payments-go/domain"
 )
 
-// ─── JSON column shapes ───────────────────────────────────────────────────────
-
 type orderItemJSON struct {
 	ID              string `json:"id"`
 	ProductID       string `json:"productId"`
@@ -29,8 +27,6 @@ type shippingAddressJSON struct {
 	PostalCode string `json:"postalCode"`
 	Country    string `json:"country"`
 }
-
-// ─── Repository ───────────────────────────────────────────────────────────────
 
 type PostgresOrderRepository struct {
 	Pool *pgxpool.Pool
@@ -95,8 +91,6 @@ func (r *PostgresOrderRepository) ListByUser(ctx context.Context, userID string,
 	}
 	return orders, total, nil
 }
-
-// ─── SQL + scanner helpers ────────────────────────────────────────────────────
 
 const orderSelectSQL = `
 	SELECT id, user_id, status, items, shipping_address, subtotal, total, idempotency_key, created_at, updated_at

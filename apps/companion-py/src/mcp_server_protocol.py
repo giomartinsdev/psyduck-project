@@ -1,16 +1,3 @@
-"""
-Proper MCP (Model Context Protocol) server implementation.
-
-Exposes the supergraph operations as MCP tools via JSON-RPC 2.0 over HTTP POST.
-The LangGraph agent uses this server via MCPClient — any standard MCP client
-(Claude Desktop, other agents) can also connect to :4005/mcp.
-
-Protocol: https://modelcontextprotocol.io/specification
-Methods implemented:
-  - initialize
-  - tools/list   → dynamic discovery from supergraph introspection (FR-008)
-  - tools/call   → execute operation against gateway
-"""
 import json
 import logging
 from fastapi import Request
@@ -24,7 +11,6 @@ MCP_VERSION = "2024-11-05"
 
 
 async def handle_mcp_rpc(request: Request) -> JSONResponse:
-    """Single POST endpoint — handles all MCP JSON-RPC methods."""
     try:
         body = await request.json()
     except Exception:
@@ -47,7 +33,6 @@ async def handle_mcp_rpc(request: Request) -> JSONResponse:
         })
 
     if method == "tools/list":
-        # FR-008: discover available tools from the live supergraph SDL
         available = await mcp_server.list_tools()
         tools = [
             {
@@ -62,7 +47,6 @@ async def handle_mcp_rpc(request: Request) -> JSONResponse:
     if method == "tools/call":
         tool_name = params.get("name", "")
         arguments = params.get("arguments", {})
-        # Authorization is passed via meta or arguments
         authorization = params.get("_meta", {}).get("authorization", "") or \
                         arguments.pop("_authorization", "")
 
@@ -76,7 +60,6 @@ async def handle_mcp_rpc(request: Request) -> JSONResponse:
         })
 
     if method == "notifications/initialized":
-        # Client confirmation — no response needed
         return JSONResponse(content=None, status_code=204)
 
     return _error(-32601, f"Method not found: {method}", rpc_id)
@@ -91,7 +74,6 @@ def _error(code: int, message: str, id) -> JSONResponse:
 
 
 def _input_schema(tool_name: str) -> dict:
-    """Generate a minimal JSON Schema for each tool's input arguments."""
     schemas: dict[str, dict] = {
         "me": {"type": "object", "properties": {}, "required": []},
         "products": {

@@ -1,10 +1,3 @@
-"""
-Strawberry GraphQL schema for the Companion AI subgraph.
-
-Matches the exact SDL contract from apps/companion/src/index.ts so the
-Apollo Gateway federation continues to work without changes.
-Federation v2 @key on AIConversation enables __resolveReference.
-"""
 import json
 import uuid
 from typing import Optional
@@ -16,8 +9,6 @@ from strawberry.types import Info
 from . import db as database
 from .agent import run_agent
 
-
-# ─── GraphQL types ────────────────────────────────────────────────────────────
 
 @strawberry.type
 class ToolInvocation:
@@ -59,15 +50,11 @@ class AIMessageResponse:
     conversation: AIConversation
 
 
-# ─── Input types ──────────────────────────────────────────────────────────────
-
 @strawberry.input
 class SendAIMessageInput:
     content: str
     conversation_id: Optional[strawberry.ID] = None
 
-
-# ─── Helpers ──────────────────────────────────────────────────────────────────
 
 def _invocations_from_row(raw: object) -> list[ToolInvocation]:
     if isinstance(raw, str):
@@ -117,8 +104,6 @@ def _require_auth(info: Info) -> str:
     return user_id
 
 
-# ─── Query ────────────────────────────────────────────────────────────────────
-
 @strawberry.type
 class Query:
     @strawberry.field(name="myConversations")
@@ -140,8 +125,6 @@ class Query:
         return _conv_from_row(row, msgs)
 
 
-# ─── Mutation ─────────────────────────────────────────────────────────────────
-
 @strawberry.type
 class Mutation:
     @strawberry.mutation(name="startConversation")
@@ -157,11 +140,8 @@ class Mutation:
         input: SendAIMessageInput,
     ) -> AIMessageResponse:
         user_id = _require_auth(info)
-        # user_token: the user's original session token forwarded by the gateway.
-        # Used by MCP tools when calling other subgraphs (payments, products, etc.).
         user_token = info.context.get("user_token", "") or info.context.get("authorization", "")
 
-        # Load or create conversation
         if input.conversation_id:
             conv_row = await database.get_conversation(str(input.conversation_id))
             if not conv_row:
@@ -171,27 +151,22 @@ class Mutation:
 
         conv_id = str(conv_row["id"])
 
-        # Load conversation history for context
         history_rows = await database.get_messages(conv_id)
         history = [{"role": r["role"], "content": r["content"]} for r in history_rows]
 
-        # Persist the user message
         await database.create_message(conv_id, "USER", input.content)
 
-        # Run the LangGraph agent (MCP tool discovery + execution)
         response_text, tool_invocations = await run_agent(
             user_message=input.content,
-            authorization=user_token,   # session token — works with all subgraphs
+            authorization=user_token,
             history=history,
         )
 
-        # Persist the assistant reply with tool invocations
         assistant_row = await database.create_message(
             conv_id, "ASSISTANT", response_text, tool_invocations
         )
         await database.touch_conversation(conv_id)
 
-        # Reload conversation with all messages
         all_msgs = await database.get_messages(conv_id)
         updated_conv_row = await database.get_conversation(conv_id)
 
@@ -200,8 +175,6 @@ class Mutation:
             conversation=_conv_from_row(updated_conv_row, all_msgs),
         )
 
-
-# ─── Schema ───────────────────────────────────────────────────────────────────
 
 schema = strawberry.federation.Schema(
     query=Query,

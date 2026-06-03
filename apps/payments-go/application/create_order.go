@@ -9,9 +9,6 @@ import (
 	"github.com/psyduck-project/payments-go/domain"
 )
 
-// ─── External dependency port ─────────────────────────────────────────────────
-
-// ProductFetcher resolves product data from the Products subgraph.
 type ProductFetcher interface {
 	FetchProduct(productID string) *ProductData
 }
@@ -21,8 +18,6 @@ type ProductData struct {
 	Price    string
 	ImageURL string
 }
-
-// ─── Command ──────────────────────────────────────────────────────────────────
 
 type OrderItemInput struct {
 	ProductID string
@@ -44,8 +39,6 @@ type CreateOrderCommand struct {
 	IdempotencyKey  string
 }
 
-// ─── Handler ──────────────────────────────────────────────────────────────────
-
 type CreateOrderHandler struct {
 	Orders   domain.OrderRepository
 	Products ProductFetcher
@@ -53,12 +46,10 @@ type CreateOrderHandler struct {
 }
 
 func (h *CreateOrderHandler) Handle(ctx context.Context, cmd CreateOrderCommand) (*domain.Order, error) {
-	// Idempotency scoped per user — two users can reuse the same UUID independently
 	if existing, err := h.Orders.FindByIdempotencyKey(ctx, cmd.UserID, cmd.IdempotencyKey); err == nil && existing != nil {
 		return existing, nil
 	}
 
-	// Resolve product prices from the Products subgraph
 	items := make([]domain.OrderItem, 0, len(cmd.Items))
 	for _, input := range cmd.Items {
 		unitPrice := 99.00
@@ -85,7 +76,6 @@ func (h *CreateOrderHandler) Handle(ctx context.Context, cmd CreateOrderCommand)
 		})
 	}
 
-	// Build aggregate — enforces invariants (e.g. non-empty items)
 	order, err := domain.NewOrder(
 		uuid.New().String(),
 		cmd.UserID,
@@ -103,12 +93,10 @@ func (h *CreateOrderHandler) Handle(ctx context.Context, cmd CreateOrderCommand)
 		return nil, err
 	}
 
-	// Persist
 	if err := h.Orders.Save(ctx, order); err != nil {
 		return nil, err
 	}
 
-	// Dispatch domain events
 	for _, evt := range order.PopEvents() {
 		h.Bus.Publish(evt)
 	}

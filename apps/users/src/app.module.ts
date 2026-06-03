@@ -13,8 +13,6 @@ import type { Request } from 'express';
     GraphQLModule.forRoot<ApolloFederationDriverConfig>({
       driver: ApolloFederationDriver,
       typePaths: [join(__dirname, '**/*.graphql')],
-      // Forward the raw Express request so BetterAuth's session verification
-      // (cookie or Authorization: Bearer) works in resolvers.
       context: ({ req }: { req: Request }) => ({ req }),
     }),
     UsersModule,

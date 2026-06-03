@@ -7,11 +7,6 @@ export const BETTER_AUTH_TOKEN = 'BETTER_AUTH';
 
 export type AuthInstance = ReturnType<typeof betterAuth>;
 
-// ─── Factory 3: BetterAuth instance with adapter injected via DI ─────────────
-// RNF-004: BetterAuth acts as the OAuth2/OIDC authorization server.
-// The adapter is injected rather than hardwired so the factory chain
-// (EntityManager → Kysely → kyselyAdapter → betterAuth) is fully managed
-// by NestJS's DI container.
 export const BetterAuthFactory = {
   provide: BETTER_AUTH_TOKEN,
   useFactory: (adapter: BetterAuthOptions['database']) => {
@@ -32,15 +27,7 @@ export const BetterAuthFactory = {
       },
 
       plugins: [
-        // bearer() allows Authorization: Bearer <token> alongside cookie sessions.
-        // The token returned by signInEmail can be used directly in GraphQL requests
-        // or forwarded by the Gateway to subgraphs.
         bearer(),
-
-        // oidcProvider() turns this subgraph into an OAuth2/OIDC authorization
-        // server. The Companion AI is registered as a trusted client so the Gateway
-        // can perform a token exchange on behalf of the logged-in user and inject
-        // a delegated access token into AI subgraph requests.
         oidcProvider({
           loginPage: '/login',
           consentPage: '/consent',

@@ -1,17 +1,7 @@
-"""
-Hybrid LangGraph agent:
-  - LLM (llama3.2:3b via Ollama) handles TOOL SELECTION and conversational framing
-  - Python code handles ALL product/order data formatting (100% grounded, zero hallucination)
-
-Graph:
-  [call_model] → (has tool calls?) → [call_tools] → [call_model] → END
-
-The LLM writes natural-language text; any factual product/order data comes
-exclusively from MCP tool results formatted by Python, never from the model.
-"""
 import json
 import logging
 import os
+import re
 from typing import Annotated, Literal
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
@@ -28,8 +18,6 @@ log = logging.getLogger(__name__)
 OLLAMA_URL   = os.getenv("OLLAMA_URL",   "http://host.docker.internal:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
 
-# The LLM is only asked to select tools and write conversational framing.
-# Product/order data is formatted by Python code — never by the LLM.
 SYSTEM_PROMPT = """You are a shopping assistant for TechStore.
 
 Your ONLY job: pick ONE tool and write a 1-line intro sentence. The system formats the data.
@@ -66,17 +54,56 @@ Examples:
   EN: "Here's what we found:"
 """
 
+_PRICE_RE = re.compile(
+    r'\s*(de\s+|até\s+|abaixo\s+de\s+|under\s+|up\s+to\s+)?'
+    r'r?\$?\s*\d[\d\.,]*\s*(reais?|brl|k|mil)?\s*',
+    re.IGNORECASE,
+)
 
-# ─── State ────────────────────────────────────────────────────────────────────
+_PT_EN: dict = {
+    "teclado": "keyboard", "teclados": "keyboard",
+    "fone de ouvido": "headphone", "fone": "headphone", "fones": "headphone",
+    "audifonos": "headphone", "audifono": "headphone",
+    "cadeira": "chair", "cadeiras": "chair",
+    "mesa": "desk", "mesas": "desk",
+    "microfone": "microphone", "microfones": "microphone",
+    "câmera": "camera", "webcam": "webcam",
+    "carregador": "charger", "carregadores": "charger",
+    "cabo": "cable", "cabos": "cable",
+    "armazenamento": "storage", "disco": "drive",
+    "rato": "mouse", "ratos": "mouse",
+    "suporte": "stand", "braço": "arm",
+    "sem fio": "wireless", "bluetooth": "bluetooth",
+    "mecânico": "mechanical", "mecânica": "mechanical",
+    "ergonômico": "ergonomic", "ergonômica": "ergonomic",
+    "gaming": "gaming", "gamer": "gaming",
+    "alto falante": "speaker", "caixa de som": "speaker",
+    "leve": "lightweight", "compacto": "compact",
+    "barato": "", "caro": "", "premium": "premium",
+}
+
+_VALID_CATEGORIES = {"Electronics", "Peripherals", "Displays", "Furniture",
+                     "Accessories", "Storage", "Networking", "Audio"}
+
+_TWO_WORD_PRODUCTS = {"mouse pad", "desk mat", "cable tie"}
+
+_SCHEMA_VALUE_RE = re.compile(r"""^\{['"]type['"]\s*:""")
+
+_PT_PATTERN = re.compile(
+    r"\b(oi|olá|ola|quero|têm|meu|minha|meus|minhas|você|voce|preciso|posso|"
+    r"produto[s]?|pedido[s]?|comprar|novidade[s]?|desconto|promoção|teclado[s]?|"
+    r"fone[s]?|cadeira[s]?|disponível|estoque|logado|recomenda)\b"
+    r"|[ãõçáéíóúâêîôû]",
+    re.IGNORECASE,
+)
+
 
 class AgentState(TypedDict):
     messages: Annotated[list, add_messages]
     authorization: str
-    tool_data: dict        # raw data from each tool call: {tool_name: result}
-    final_response: str    # assembled by Python formatter
+    tool_data: dict
+    final_response: str
 
-
-# ─── Tools (MCP-backed) ───────────────────────────────────────────────────────
 
 def make_tools(authorization: str):
     @tool
@@ -108,15 +135,11 @@ def make_tools(authorization: str):
     return [search_products, get_featured_products, get_my_orders, get_my_profile]
 
 
-# ─── Python response formatter (zero hallucination) ──────────────────────────
-
 def _product_line(p: dict, lang: str = "en") -> str:
-    """Format a single product as a markdown link to its catalogue page."""
     title = p.get("title", "?")
     price = _fmt_brl(p.get("price", "0"))
     pid   = p.get("id", "")
     if pid:
-        # Clickable link — ChatBubble renders it as a Next.js navigation link
         return f"• [**{title}**](/catalogue/{pid}) — {price}"
     return f"• **{title}** — {price}"
 
@@ -130,17 +153,11 @@ def _fmt_brl(v) -> str:
 
 async def _format_tool_data(tool_name: str, raw: str, lang: str,
                       llm_intro: str, authorization: str) -> str:
-    """
-    Format tool results using Python — guaranteed to contain only real data.
-    The llm_intro is the LLM's short conversational sentence.
-    """
     try:
         data = json.loads(raw)
     except Exception:
         data = raw
 
-    # Only use the LLM intro if it's short and doesn't contain product claims
-    # (prevents the model from injecting hallucinated product descriptions)
     intro_clean = llm_intro.strip()
     _suspicious = ["r$", "monitor", "teclado", "keyboard", "mouse", "headphone",
                    "disponível", "available", "alta qualidade", "high quality",
@@ -149,12 +166,10 @@ async def _format_tool_data(tool_name: str, raw: str, lang: str,
     if intro_clean and not any(s in intro_clean.lower() for s in _suspicious) and len(intro_clean) < 150:
         parts = [intro_clean]
     else:
-        # Replace with a safe, neutral header
         parts = ["Aqui estão os resultados:" if lang == "pt" else "Here's what we found:"]
 
     if tool_name in ("search_products", "get_featured_products"):
         items = data if isinstance(data, list) else []
-        # Unwrap edge nodes if needed
         unwrapped = []
         for item in items:
             node = item.get("node", item) if isinstance(item, dict) else item
@@ -192,7 +207,6 @@ async def _format_tool_data(tool_name: str, raw: str, lang: str,
                 date   = o.get("createdAt", "")[:10]
                 oid    = o.get("id", "")[:8]
                 parts.append(f"• **#{oid}** {date} — {status} — {total}")
-                # Show items for ALL orders (especially useful for "items do meu pedido")
                 for item in o.get("items", []):
                     qty   = item.get("quantity", 1)
                     title = item.get("productTitle", "?")
@@ -202,7 +216,6 @@ async def _format_tool_data(tool_name: str, raw: str, lang: str,
 
     elif tool_name == "get_my_profile":
         if isinstance(data, dict) and data.get("name"):
-            first = data["name"].split()[0]
             greeting = f"Olá, **{data['name']}**! ({data.get('email','')})" if lang == "pt" \
                        else f"Hi, **{data['name']}**! ({data.get('email','')})"
             parts = [greeting]
@@ -214,22 +227,39 @@ async def _format_tool_data(tool_name: str, raw: str, lang: str,
     )
 
 
-# ─── Language detection ───────────────────────────────────────────────────────
-
-import re
-_PT = re.compile(
-    r"\b(oi|olá|ola|quero|têm|meu|minha|meus|minhas|você|voce|preciso|posso|"
-    r"produto[s]?|pedido[s]?|comprar|novidade[s]?|desconto|promoção|teclado[s]?|"
-    r"fone[s]?|cadeira[s]?|disponível|estoque|logado|recomenda)\b"
-    r"|[ãõçáéíóúâêîôû]",
-    re.IGNORECASE,
-)
-
 def _detect_lang(text: str) -> str:
-    return "pt" if _PT.search(text) else "en"
+    return "pt" if _PT_PATTERN.search(text) else "en"
 
 
-# ─── LangGraph nodes ──────────────────────────────────────────────────────────
+def _sanitize_args(raw_args: dict) -> dict:
+    safe_args: dict = {}
+    for k, v in raw_args.items():
+        if isinstance(v, (dict, list)):
+            safe_args[k] = ""
+        elif isinstance(v, str) and _SCHEMA_VALUE_RE.match(v.strip()):
+            safe_args[k] = ""
+        elif v is None:
+            safe_args[k] = ""
+        else:
+            safe_args[k] = v
+
+    if "search" in safe_args and safe_args["search"]:
+        s = safe_args["search"].lower().strip()
+        original = s
+        for pt, en in sorted(_PT_EN.items(), key=lambda x: -len(x[0])):
+            s = s.replace(pt, en if en else "").strip()
+        translated = s != original
+        s = _PRICE_RE.sub(" ", s).strip()
+        if translated and s and len(s.split()) >= 2 and s not in _TWO_WORD_PRODUCTS:
+            s = s.split()[0]
+        safe_args["search"] = s.strip() or original
+
+    if "category" in safe_args and safe_args.get("category"):
+        if safe_args["category"] not in _VALID_CATEGORIES:
+            safe_args["category"] = ""
+
+    return safe_args
+
 
 def build_graph(tools: list):
     llm = ChatOllama(
@@ -249,81 +279,7 @@ def build_graph(tools: list):
         tool_results = []
         tool_data = dict(state.get("tool_data") or {})
         for tc in last.tool_calls:
-            raw_args = tc.get("args") or {}
-            # Detect and discard schema descriptors the small model sometimes passes:
-            # dict form:   {"category": {"type": "string"}}
-            # string form: {"category": "{'type': 'string'}"}  ← str() of the above
-            import re as _re
-            _schema = _re.compile(r"""^\{['"]type['"]\s*:""")
-            safe_args: dict = {}
-            for k, v in raw_args.items():
-                if isinstance(v, (dict, list)):
-                    safe_args[k] = ""            # schema dict → use tool default
-                elif isinstance(v, str) and _schema.match(v.strip()):
-                    safe_args[k] = ""            # stringified schema → use tool default
-                elif v is None:
-                    safe_args[k] = ""
-                else:
-                    safe_args[k] = v
-            # Translate common PT product terms to EN (WooCommerce catalog is in English)
-            _PT_EN: dict = {
-                "teclado": "keyboard", "teclados": "keyboard",
-                "fone de ouvido": "headphone", "fone": "headphone", "fones": "headphone",
-                "audifonos": "headphone", "audifono": "headphone",
-                "cadeira": "chair", "cadeiras": "chair",
-                "mesa": "desk", "mesas": "desk",
-                "microfone": "microphone", "microfones": "microphone",
-                "câmera": "camera", "webcam": "webcam",
-                "carregador": "charger", "carregadores": "charger",
-                "cabo": "cable", "cabos": "cable",
-                "armazenamento": "storage", "disco": "drive",
-                "rato": "mouse", "ratos": "mouse",
-                "suporte": "stand", "braço": "arm",
-                "sem fio": "wireless", "bluetooth": "bluetooth",
-                "mecânico": "mechanical", "mecânica": "mechanical",
-                "ergonômico": "ergonomic", "ergonômica": "ergonomic",
-                "gaming": "gaming", "gamer": "gaming",
-                "alto falante": "speaker", "caixa de som": "speaker",
-                "leve": "lightweight", "compacto": "compact",
-                "barato": "", "caro": "", "premium": "premium",
-            }
-            if "search" in safe_args and safe_args["search"]:
-                s = safe_args["search"].lower().strip()
-                original = s
-                # Apply ALL PT→EN translations (longer phrases first to avoid partial matches)
-                for pt, en in sorted(_PT_EN.items(), key=lambda x: -len(x[0])):
-                    s = s.replace(pt, en if en else "").strip()
-                translated = s != original
-                # Strip price/budget fragments including PT prepositions (de, até, abaixo de)
-                s = _re.sub(
-                    r'\s*(de\s+|até\s+|abaixo\s+de\s+|under\s+|up\s+to\s+)?'
-                    r'r?\$?\s*\d[\d\.,]*\s*(reais?|brl|k|mil)?\s*',
-                    " ", s, flags=_re.IGNORECASE
-                ).strip()
-                # If a PT→EN translation occurred and result is multi-word,
-                # keep only the first keyword — WooCommerce search is single-term.
-                # Exception: keep "mouse pad" and "desk mat" as-is (they're proper product names).
-                _two_word_products = {"mouse pad", "desk mat", "cable tie"}
-                if translated and s and len(s.split()) >= 2 and s not in _two_word_products:
-                    s = s.split()[0]
-                safe_args["search"] = s.strip() or original
-
-            # Strip price/budget words from search terms — WooCommerce doesn't understand them
-            if "search" in safe_args and safe_args["search"]:
-                price_pattern = _re.compile(
-                    r'\s*(de\s+)?r?\$?\s*[\d\.,]+\s*(reais?|brl|mil|k)?\s*'
-                    r'|under\s+r?\$?\s*[\d\.,]+\s*'
-                    r'|abaixo\s+de\s+r?\$?\s*[\d\.,]+\s*'
-                    r'|até\s+r?\$?\s*[\d\.,]+\s*',
-                    _re.IGNORECASE
-                )
-                safe_args["search"] = price_pattern.sub("", safe_args["search"]).strip()
-            # Also clear invalid/hallucinated category values that aren't real WooCommerce categories
-            if "category" in safe_args and safe_args.get("category"):
-                valid_cats = {"Electronics", "Peripherals", "Displays", "Furniture",
-                              "Accessories", "Storage", "Networking", "Audio"}
-                if safe_args["category"] not in valid_cats:
-                    safe_args["category"] = ""
+            safe_args = _sanitize_args(tc.get("args") or {})
             log.info("[Tool] %s(%s)", tc["name"], safe_args)
             fn = tool_map.get(tc["name"])
             try:
@@ -347,8 +303,6 @@ def build_graph(tools: list):
     g.add_edge("call_tools", "call_model")
     return g.compile()
 
-
-# ─── Public API ───────────────────────────────────────────────────────────────
 
 async def run_agent(
     user_message: str,
@@ -374,7 +328,6 @@ async def run_agent(
         config={"recursion_limit": 8},
     )
 
-    # LLM's short intro sentence (after the last tool call)
     final_ai_msg = None
     for msg in reversed(result["messages"]):
         if isinstance(msg, AIMessage) and not msg.tool_calls:
@@ -382,21 +335,17 @@ async def run_agent(
             break
     llm_intro = (final_ai_msg.content or "") if final_ai_msg else ""
 
-    # Format each tool's result with Python (grounded, zero hallucination)
     tool_data: dict = result.get("tool_data") or {}
     if tool_data:
-        # Use the last tool called for formatting
         last_tool = list(tool_data.keys())[-1]
         response_text = await _format_tool_data(
             last_tool, tool_data[last_tool], lang, llm_intro, authorization
         )
     else:
-        # No tool was called — use the LLM's response as-is (greetings, etc.)
         response_text = llm_intro or (
             "Olá! Como posso ajudar?" if lang == "pt" else "Hi! How can I help?"
         )
 
-    # Collect tool invocations for DB storage
     tool_invocations = []
     for msg in result["messages"]:
         if isinstance(msg, AIMessage) and msg.tool_calls:

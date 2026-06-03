@@ -1,4 +1,3 @@
-"""asyncpg database layer — mirrors the companion_db schema created by MikroORM."""
 import asyncpg
 import json
 import os
@@ -45,8 +44,6 @@ async def _migrate(pool: asyncpg.Pool) -> None:
         """)
 
 
-# ─── Conversation CRUD ────────────────────────────────────────────────────────
-
 async def create_conversation(user_id: str) -> dict:
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -85,8 +82,6 @@ async def touch_conversation(conversation_id: str) -> None:
             conversation_id,
         )
 
-
-# ─── Message CRUD ─────────────────────────────────────────────────────────────
 
 async def create_message(
     conversation_id: str,

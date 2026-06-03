@@ -11,12 +11,10 @@ import (
 )
 
 const (
-	PaymentsStream  = "payments:events"
-	CommandsStream  = "payments:commands"
+	PaymentsStream = "payments:events"
+	CommandsStream = "payments:commands"
 )
 
-// ValkeyEventBus publishes domain events AND async payment commands to Valkey streams.
-// It implements both domain.EventBus and application.PaymentCommandBus.
 type ValkeyEventBus struct {
 	client *redis.Client
 }
@@ -25,7 +23,6 @@ func NewValkeyEventBus(client *redis.Client) *ValkeyEventBus {
 	return &ValkeyEventBus{client: client}
 }
 
-// Publish sends a domain event (OrderCreated, OrderPaid…) to the events stream.
 func (b *ValkeyEventBus) Publish(event domain.DomainEvent) {
 	payload, _ := json.Marshal(event)
 	id, err := b.client.XAdd(context.Background(), &redis.XAddArgs{
@@ -42,9 +39,6 @@ func (b *ValkeyEventBus) Publish(event domain.DomainEvent) {
 	log.Printf("[event bus] %s → %s id=%s", event.EventName(), PaymentsStream, id)
 }
 
-// PublishProcessPaymentCommand enqueues the capture work into the commands stream.
-// The payment row already exists in DB with INITIATED status — the consumer
-// performs the atomic UPDATE to CAPTURED + order to PAID.
 func (b *ValkeyEventBus) PublishProcessPaymentCommand(paymentID, orderID, amount, idempotencyKey string) {
 	id, err := b.client.XAdd(context.Background(), &redis.XAddArgs{
 		Stream: CommandsStream,

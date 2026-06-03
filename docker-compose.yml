@@ -1,7 +1,5 @@
 services:
 
-  # ─── Database ────────────────────────────────────────────────────────────────
-
   postgres:
     image: postgres:16-alpine
     container_name: psyduck-postgres
@@ -58,8 +56,6 @@ services:
       - wp_data:/var/www/html
       - ./infra/wp-bootstrap.sh:/usr/local/bin/wp-bootstrap.sh
     entrypoint: ["bash", "-c", "/usr/local/bin/wp-bootstrap.sh & docker-entrypoint.sh apache2-foreground"]
-    # Healthy only after wp-bootstrap.sh activates WPGraphQL — the /graphql
-    # endpoint doesn't exist until that plugin is installed and active.
     healthcheck:
       test: ["CMD-SHELL", "curl -sf -X POST http://localhost/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{__typename}\"}' | grep -q __typename"]
       interval: 30s
@@ -79,8 +75,6 @@ services:
       timeout: 3s
       retries: 10
 
-  # ─── Subgraphs ────────────────────────────────────────────────────────────────
-
   users:
     build: .
     container_name: psyduck-users
@@ -99,8 +93,6 @@ services:
       DB_USER: users_user
       DB_PASSWORD: users_pwd
       NODE_ENV: development
-      # BETTER_AUTH_URL uses localhost so browser-side OAuth flows work via the
-      # host port mapping (the URL is embedded in OIDC discovery documents).
       BETTER_AUTH_URL: http://localhost:4001
       BETTER_AUTH_SECRET: dev-better-auth-secret-change-in-prod
       AI_OAUTH_CLIENT_ID: ai-companion
@@ -183,21 +175,15 @@ services:
       DB_USER: users_user
       DB_PASSWORD: users_pwd
       USERS_AUTH_URL: http://users:4001
-      # GATEWAY_URL used at request time for MCP tool discovery — not at startup
       GATEWAY_URL: http://gateway:4000/graphql
-      # Ollama runs on the host machine; host.docker.internal reaches it from the container
       OLLAMA_URL: http://host.docker.internal:11434
       OLLAMA_MODEL: llama3.2:3b
     healthcheck:
-      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:4004/graphql')\" 2>/dev/null || exit 1"]
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request,json; req=urllib.request.Request('http://localhost:4004/graphql',data=json.dumps({'query':'{__typename}'}).encode(),headers={'Content-Type':'application/json'}); urllib.request.urlopen(req)\" 2>/dev/null || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
       start_period: 15s
-
-  # ─── Gateway ─────────────────────────────────────────────────────────────────
-  # Starts last — waits for all four subgraphs to be healthy before composing
-  # the federated schema via IntrospectAndCompose.
 
   gateway:
     build: .
@@ -226,8 +212,6 @@ services:
       AI_OAUTH_CLIENT_SECRET: companion-dev-secret
       AI_OAUTH_REDIRECT_URL: http://localhost:4004/auth/callback
 
-  # ─── Web ─────────────────────────────────────────────────────────────────────
-
   web:
     build: .
     container_name: psyduck-web
@@ -239,9 +223,7 @@ services:
       - gateway
     environment:
       NEXT_PUBLIC_USE_MOCKS: "false"
-      # Browser-facing URL — the host port mapping makes 4000 reachable from outside.
       NEXT_PUBLIC_GATEWAY_URL: http://localhost:4000/graphql
-      # Server-facing URL — used by Next.js SSR/ISR inside the container.
       GATEWAY_URL: http://gateway:4000/graphql
 
 volumes:

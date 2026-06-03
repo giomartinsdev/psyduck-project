@@ -7,21 +7,9 @@ import { Pool } from 'pg';
 
 export const BETTER_AUTH_DATABASE_ADAPTER_TOKEN = 'BETTER_AUTH_DATABASE_ADAPTER';
 
-// ─── Factory 1: Kysely instance bridged from MikroORM's knex connection ──────
-// Follows the same pattern as @acme/database's createKyselyDialect: reuses
-// the connection settings already configured in MikroORM so BetterAuth shares
-// the same PostgreSQL instance without duplicating driver configuration.
 export const AuthDatabaseKyselyFactory = {
   provide: 'AUTH_DATABASE_KYSELY',
   async useFactory(em: EntityManager) {
-    if (process.env['IS_MIGRATOR'] === 'true') {
-      return {} as Kysely<Record<string, unknown>>;
-    }
-
-    // MikroORM's PostgreSqlConnection extends AbstractSqlConnection (from
-    // @mikro-orm/knex), which exposes the underlying Knex instance.
-    // We extract the pg connection settings from Knex's client config so
-    // that Kysely shares the exact same database target as MikroORM.
     const sqlConn = em.getConnection() as unknown as AbstractSqlConnection;
     const knex = sqlConn.getKnex();
     const pgConn = (knex.client as { config: { connection: Record<string, unknown> } }).config
@@ -52,7 +40,6 @@ export const AuthDatabaseKyselyFactory = {
 
 export type AuthKysely = Kysely<Record<string, unknown>>;
 
-// ─── Factory 2: BetterAuth database adapter wrapping the Kysely instance ─────
 export const BetterAuthDatabaseAdapterFactory = {
   provide: BETTER_AUTH_DATABASE_ADAPTER_TOKEN,
   useFactory: async (pluggedKysely: AuthKysely) => {

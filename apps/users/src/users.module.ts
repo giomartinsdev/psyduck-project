@@ -18,8 +18,6 @@ import { UserResolver } from './graphql/user.resolver';
 const CommandHandlers = [SignUpHandler, SignInHandler];
 const QueryHandlers = [GetMeHandler];
 
-// Factory chain: EntityManager → Kysely → kyselyAdapter → betterAuth instance
-// Each step is a NestJS FactoryProvider so the DI container owns the lifecycle.
 const BetterAuthProviders = [
   AuthDatabaseKyselyFactory,
   BetterAuthDatabaseAdapterFactory,

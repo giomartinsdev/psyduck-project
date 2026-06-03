@@ -20,8 +20,6 @@ import (
 	"github.com/psyduck-project/payments-go/infrastructure"
 )
 
-// ─── ProductFetcher adapter ───────────────────────────────────────────────────
-
 type httpProductFetcher struct{ url string }
 
 func (f *httpProductFetcher) FetchProduct(productID string) *application.ProductData {
@@ -49,8 +47,6 @@ func (f *httpProductFetcher) FetchProduct(productID string) *application.Product
 		ImageURL: result.Data.Product.ImageURL,
 	}
 }
-
-// ─── Auth middleware ──────────────────────────────────────────────────────────
 
 var usersAuthURL = env("USERS_AUTH_URL", "http://localhost:4001")
 
@@ -87,13 +83,10 @@ func resolveUserID(ctx context.Context, authorization string) string {
 	return result.User.ID
 }
 
-// ─── Bootstrap ────────────────────────────────────────────────────────────────
-
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// ── Infrastructure ────────────────────────────────────────────────────────
 	database, err := db.New()
 	if err != nil {
 		log.Fatalf("DB init failed: %v", err)
@@ -108,22 +101,17 @@ func main() {
 	}
 	defer valkeyClient.Close()
 
-	// ── Repositories ──────────────────────────────────────────────────────────
 	orderRepo := &infrastructure.PostgresOrderRepository{Pool: database.Pool}
 	paymentRepo := &infrastructure.PostgresPaymentRepository{Pool: database.Pool}
 
-	// ── Event + command bus (both implemented by ValkeyEventBus) ─────────────
 	bus := infrastructure.NewValkeyEventBus(valkeyClient)
 
-	// ── Domain event consumer (OrderCreated, OrderPaid reactions) ─────────────
 	domainConsumer := infrastructure.NewEventConsumer(valkeyClient)
 	domainConsumer.Start(ctx)
 
-	// ── Payment command consumer (capture async: INITIATED → CAPTURED) ────────
 	cmdConsumer := infrastructure.NewPaymentCommandConsumer(valkeyClient, paymentRepo, orderRepo, bus)
 	cmdConsumer.Start(ctx)
 
-	// ── Application handlers ──────────────────────────────────────────────────
 	createOrderHandler := &application.CreateOrderHandler{
 		Orders:   orderRepo,
 		Products: &httpProductFetcher{url: env("PRODUCTS_SUBGRAPH_URL", "http://localhost:4002/graphql")},
@@ -133,17 +121,16 @@ func main() {
 		Orders:     orderRepo,
 		Payments:   paymentRepo,
 		Bus:        bus,
-		CommandBus: bus, // ValkeyEventBus also implements PaymentCommandBus
+		CommandBus: bus,
 	}
 
-	// ── GraphQL HTTP adapter ──────────────────────────────────────────────────
 	gqlHandler := graph.NewHandler(createOrderHandler, processPaymentHandler, orderRepo, paymentRepo)
 
 	mux := http.NewServeMux()
 	mux.Handle("/graphql", authMiddleware(gqlHandler))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
-		_, _ = w.Write([]byte("Payments Go (DDD + Valkey async) — POST /graphql"))
+		_, _ = w.Write([]byte("Payments Go — POST /graphql"))
 	})
 
 	srv := &http.Server{Addr: ":" + env("PORT", "4003"), Handler: mux}
@@ -153,7 +140,7 @@ func main() {
 		_ = srv.Shutdown(context.Background())
 	}()
 
-	fmt.Printf("💳 Payments Go (DDD + Valkey async) running at http://localhost:%s/graphql\n", env("PORT", "4003"))
+	fmt.Printf("💳 Payments Go running at http://localhost:%s/graphql\n", env("PORT", "4003"))
 	log.Fatal(srv.ListenAndServe())
 }
 

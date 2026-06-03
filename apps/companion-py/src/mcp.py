@@ -1,15 +1,3 @@
-"""
-SupergraphMCPServer — in-process MCP-style tool registry.
-
-FR-008: Discovers available tools by introspecting the live supergraph SDL at
-runtime. Any new Query/Mutation field added to the supergraph is automatically
-included on the next discovery call, satisfying SC-005.
-
-Architecture:
-  list_tools()  → GET /graphql with { _service { sdl } } → parse operation names
-                → intersect with TOOL_CONFIGS → return manifest
-  call_tool()   → POST /graphql with the tool's query/mutation + user's token
-"""
 import json
 import logging
 import os
@@ -23,11 +11,6 @@ log = logging.getLogger(__name__)
 
 GATEWAY_URL = os.getenv("GATEWAY_URL", "http://localhost:4000/graphql")
 
-
-# Tool configurations: description + GraphQL document + result extractor.
-# The key MUST match a field name in the supergraph's Query or Mutation type.
-# When a new supergraph operation is added and its name appears here, it is
-# automatically made available to the LangGraph agent without code changes.
 TOOL_CONFIGS: dict[str, dict] = {
     "me": {
         "description": "Get the currently authenticated user's profile (name, email). Use this when the user asks who they are, their name, account info, or wants to personalize the conversation.",
@@ -97,18 +80,9 @@ TOOL_CONFIGS: dict[str, dict] = {
 
 
 class SupergraphMCPServer:
-    """
-    In-process MCP server: exposes supergraph operations as discoverable tools.
-    Acts as both the MCP server (tool registry) and MCP client (tool executor).
-    """
-
     _cached_sdl: str | None = None
 
     async def list_tools(self) -> list[dict]:
-        """
-        FR-008 entry point: fetch the live SDL and return the available tool manifest.
-        Only operations present in BOTH the supergraph SDL AND TOOL_CONFIGS are listed.
-        """
         sdl = await self._fetch_sdl()
         if sdl:
             operation_names = self._parse_operation_names(sdl)
@@ -126,7 +100,6 @@ class SupergraphMCPServer:
         return available
 
     async def call_tool(self, name: str, args: dict, authorization: str) -> Any:
-        """Execute a discovered tool by posting GraphQL to the gateway."""
         config = TOOL_CONFIGS.get(name)
         if not config:
             return {"error": f"Unknown tool: {name}"}
@@ -154,15 +127,7 @@ class SupergraphMCPServer:
                 log.error("[MCP] Tool %s call failed: %s", name, exc)
                 return {"error": str(exc)}
 
-    # ─── Internal ─────────────────────────────────────────────────────────────
-
     async def _fetch_sdl(self) -> str | None:
-        """
-        Discover available operations via standard GraphQL introspection.
-        Returns a minimal pseudo-SDL string that list_tools() can parse.
-        Uses introspection rather than _service{sdl} since the gateway
-        doesn't expose that endpoint at the federation level.
-        """
         introspection = """{
             __schema {
                 queryType    { fields { name } }
@@ -175,7 +140,6 @@ class SupergraphMCPServer:
                 schema = resp.json()["data"]["__schema"]
                 q_fields = [f["name"] for f in (schema.get("queryType")    or {}).get("fields", [])]
                 m_fields = [f["name"] for f in (schema.get("mutationType") or {}).get("fields", [])]
-                # Emit a minimal pseudo-SDL that _parse_operation_names() understands
                 pseudo_sdl = (
                     "type Query {\n" + "".join(f"  {n}\n" for n in q_fields) + "}\n"
                     "type Mutation {\n" + "".join(f"  {n}\n" for n in m_fields) + "}\n"
@@ -183,15 +147,10 @@ class SupergraphMCPServer:
                 self._cached_sdl = pseudo_sdl
                 return pseudo_sdl
             except Exception:
-                return self._cached_sdl  # stale cache on network error
+                return self._cached_sdl
 
     @staticmethod
     def _parse_operation_names(sdl: str) -> list[str]:
-        """
-        Extract field names from the SDL's Query and Mutation type blocks.
-        This is the core FR-008 mechanism: the tool manifest is derived directly
-        from the live supergraph schema, not from a static list.
-        """
         names: list[str] = []
         in_root_type = False
         for line in sdl.splitlines():
@@ -203,12 +162,10 @@ class SupergraphMCPServer:
                 in_root_type = False
                 continue
             if in_root_type and stripped and not stripped.startswith("#"):
-                # Extract the field name (before parentheses or colon)
                 match = re.match(r"^([a-zA-Z_]\w*)", stripped)
                 if match:
                     names.append(match.group(1))
         return names
 
 
-# Singleton — shared across all requests
 mcp_server = SupergraphMCPServer()
